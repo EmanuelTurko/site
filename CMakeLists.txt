@@ -11,7 +11,8 @@ file(GLOB_RECURSE ... CONFIGURE_DEPENDS src/*.cpp)
 
 add_executable(site
         src/main.cpp
-        src/boostJson.cpp)
+        src/boostJson.cpp
+        )
 
 
 

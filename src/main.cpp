@@ -1,6 +1,6 @@
-#include <iostream>
+#include "util/logging.hpp"
 
 
 int main() {
-    std::cout << "Hello World!" << std::endl;
+    logging::warn("hello");
 }
