@@ -8,8 +8,7 @@
 
 namespace logging {
     using std::chrono::system_clock;
-
-    inline void write(std::string_view level, std::string_view message) {
+    inline auto write(std::string_view level, std::string_view message)->void {
         static std::mutex mu{};
         std::tm tm{}; // struct that contains a broken-down time information [tm_hour, tm_min...]
         auto now = system_clock::to_time_t(system_clock::now());
@@ -21,16 +20,13 @@ namespace logging {
         std::lock_guard lock(mu);
         std::cerr << stamp << ' ' << level << "  " << message << "\n";
     }
-
-    inline void info(std::string_view message) {
+    inline auto info(std::string_view message)->void {
         write("INFO ", message);
     }
-
-    inline void warn(std::string_view message) {
+    inline auto warn(std::string_view message)->void {
         write("WARN ", message);
     }
-
-    inline void error(std::string_view message) {
+    inline auto error(std::string_view message)->void {
         write("ERROR", message);
     }
 }

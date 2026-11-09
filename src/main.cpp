@@ -1,5 +1,6 @@
 #include "util/logging.hpp"
 #include "http/common.hpp"
+#include "stats.hpp"
 
 inline auto session(tcp::socket socket)->asio::awaitable<void> {
     try {
@@ -35,11 +36,12 @@ inline auto listen(tcp::endpoint endpoint)-> asio::awaitable<void> {
 }
 
 int main() {
-    const auto address = asio::ip::make_address("0.0.0.0");
+   const auto address = asio::ip::make_address("0.0.0.0");
     constexpr auto portNum = 18080;
     tcp::endpoint endpoint(address, portNum); //basic tcp endpoint construction
 
     asio::io_context ioc{};
     asio::co_spawn(ioc,listen(endpoint),asio::detached); // starts a coroutine
     ioc.run();
-}
+
+};
