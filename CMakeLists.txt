@@ -10,6 +10,7 @@ find_package(Threads REQUIRED)
 add_executable(site
         src/main.cpp
         src/boostJson.cpp
+        src/http/router.cpp
         )
 
 target_include_directories(site PRIVATE src)
