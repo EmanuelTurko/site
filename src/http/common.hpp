@@ -4,12 +4,17 @@
 #include <boost/beast.hpp>
 #include <boost/json.hpp>
 
+#include <string>
+#include <string_view>
+#include <functional>
+
 // Names and helpers shared by every part of the HTTP layer.
 namespace asio = boost::asio;
 namespace beast = boost::beast;
 namespace http = beast::http;
 namespace json = boost::json;
 using tcp = asio::ip::tcp;
+using system_error = boost::system::system_error;
 
 // The whole server uses one request and one response type: bodies are plain strings.
 using Request = http::request<http::string_body>;

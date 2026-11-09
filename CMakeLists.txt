@@ -7,15 +7,10 @@ set (CMAKE_CXX_STANDARD_REQUIRED on)
 find_package(Boost 1.81 REQUIRED CONFIG COMPONENTS headers)
 find_package(Threads REQUIRED)
 
-file(GLOB_RECURSE ... CONFIGURE_DEPENDS src/*.cpp)
-
 add_executable(site
         src/main.cpp
         src/boostJson.cpp
         )
-
-
-
 
 target_include_directories(site PRIVATE src)
 target_link_libraries(site PRIVATE Boost::headers Threads::Threads)

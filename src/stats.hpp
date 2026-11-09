@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <format>
 #include <atomic>
 
 class Stats {
@@ -9,7 +10,7 @@ public:
 
     auto record(std::chrono::microseconds handlerTime)-> void { // one request finished
         _requests.fetch_add(1,std::memory_order_relaxed);
-        _totalMicroseconds+= handlerTime.count();
+        _totalMicroseconds.fetch_add(handlerTime.count(),std::memory_order_relaxed);
     }
     auto requests() const -> std::uint64_t {
         return _requests.load(std::memory_order_relaxed);
