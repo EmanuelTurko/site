@@ -13,6 +13,7 @@ add_executable(site
         src/http/router.cpp
         src/http/server.cpp
         src/http/staticFiles.cpp
+        src/config.cpp
         )
 
 target_include_directories(site PRIVATE src)

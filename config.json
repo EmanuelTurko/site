@@ -1,0 +1,18 @@
+{
+  "address": "0.0.0.0",
+  "port": 18080,
+  "threads": 2,
+  "reload": true,
+
+  "playground": {
+    "compiler": "/home/et/compiler/cmake-build-debug-wsl/hydro",
+    "max_source": 4096,
+    "workers": 2
+  },
+
+  "redis": {
+    "host": "127.0.0.1",
+    "port": 1234,
+    "autostart": "/home/et/redis/server"
+  }
+}

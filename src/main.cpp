@@ -4,17 +4,27 @@
 #include "http/router.hpp"
 #include "http/server.hpp"
 #include "http/staticFiles.hpp"
+#include "config.hpp"
+
 constexpr int numThreads = 2;
 
 
 int main() {
+    Config cfg{};
+    try {
+         cfg = loadConfig(std::filesystem::path(SITE_DEFAULT_ROOT) / "config.json");
+    } catch (const std::exception& e) {
+        logging::error(e.what());
+        return 1;
+    }
+
     Router router{};
     std::filesystem::path root{SITE_DEFAULT_ROOT};
     router.getPrefix("/static/",staticFiles(root / "static","/static/"));
 
     tcp::endpoint endpoint{};
-    endpoint.address(asio::ip::make_address("0.0.0.0"));
-    endpoint.port(18080); //basic tcp endpoint construction
+    endpoint.address(asio::ip::make_address(cfg.address));
+    endpoint.port(cfg.port); //basic tcp endpoint construction
 
     Stats stats{};
     asio::io_context ioc(numThreads);
@@ -26,7 +36,7 @@ int main() {
         [&ioc](const beast::error_code&,int) {
             ioc.stop();
         });
-    logging::info("listening on http://localhost:18080 with 2 io thread(s)");
+    logging::info(std::format("listening on http://localhost:{} with {} io threads",cfg.port,numThreads));
 
     std::vector<std::thread> threads;
     for (auto i=0; i < numThreads-1;++i) {
