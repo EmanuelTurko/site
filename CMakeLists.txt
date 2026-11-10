@@ -12,6 +12,7 @@ add_executable(site
         src/boostJson.cpp
         src/http/router.cpp
         src/http/server.cpp
+        src/http/staticFiles.cpp
         )
 
 target_include_directories(site PRIVATE src)
