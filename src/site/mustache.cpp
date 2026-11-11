@@ -1,6 +1,7 @@
 #include "mustache.hpp"
 
 #include <ranges>
+#include <fstream>
 
 
 namespace {
@@ -65,6 +66,7 @@ namespace {
             case json::kind::object:
                 return true;
         }
+        return false;
     }
     // helper for findValue. recursion walk for a.b.c
     auto walk(const json::value* v,std::string_view sv) -> const json::value* {
@@ -106,65 +108,71 @@ namespace {
         }
         return nullptr;
     }
-}
-auto trim(std::string_view s) -> std::string_view {
-    auto start = s.find_first_not_of(" \t");
-    if (start == std::string_view::npos) return "";
-    auto end = s.find_last_not_of(" \t");
-    return s.substr(start,end - start +1);
 
-}
-auto classify(std::string_view s) -> Node {
-    const auto sv = trim(s);
-    if (sv.empty()) throw ParseError("empty tag");
+    auto trim(std::string_view s) -> std::string_view {
+        auto start = s.find_first_not_of(" \t");
+        if (start == std::string_view::npos) return "";
+        auto end = s.find_last_not_of(" \t");
+        return s.substr(start,end - start +1);
 
-    switch (sv[0]) {
-        case '&':
-            return Node{
-                .kind = Node::Kind::Raw,
-                .value = std::string(trim(sv.substr(1)))};
-        case '>':
-            return Node{
-                .kind = Node::Kind::Partial,
-                .value = std::string(trim(sv.substr(1)))};
-        case '#':
-            return Node{
-                .kind = Node::Kind::Section,
-                .value = std::string(trim(sv.substr(1)))};
-        case '^':
-            return Node{
-                .kind = Node::Kind::Inverted,
-                .value = std::string(trim(sv.substr(1)))};
-        default:
-            return Node{
-                .kind = Node::Kind::Var,
-                .value = std::string(sv)};
+    }
+    auto classify(std::string_view s) -> Node {
+        const auto sv = trim(s);
+        if (sv.empty()) throw ParseError("empty tag");
+
+        switch (sv[0]) {
+            case '&':
+                return Node{
+                    .kind = Node::Kind::Raw,
+                    .value = std::string(trim(sv.substr(1)))};
+            case '>':
+                return Node{
+                    .kind = Node::Kind::Partial,
+                    .value = std::string(trim(sv.substr(1)))};
+            case '#':
+                return Node{
+                    .kind = Node::Kind::Section,
+                    .value = std::string(trim(sv.substr(1)))};
+            case '^':
+                return Node{
+                    .kind = Node::Kind::Inverted,
+                    .value = std::string(trim(sv.substr(1)))};
+            default:
+                return Node{
+                    .kind = Node::Kind::Var,
+                    .value = std::string(sv)};
+        }
     }
 }
 
+
 // turns templated text into a list(tree) of Nodes
 auto parse(std::string_view src) -> Nodes {
+    // stack of "where new nodes go": the list we append to + the section name that owns it
     struct Pair {
         Nodes *list;
         std::string name;
     };
     Nodes nodes{};
+    // starts at the root list; each {{#x}} pushes, each {{/x}} pops
     std::vector open{Pair{&nodes, ""}};
     std::size_t pos{};
     constexpr auto npos = std::string_view::npos;
 
-
     while (true) {
         auto openCurly = src.find("{{", pos);
+        // no more tags: the rest is plain text
         if (openCurly == npos) {
             if (const auto sv = src.substr(pos); !sv.empty())
                 open.back().list->emplace_back(Node::Kind::Text, std::string(sv));
             break;
         }
+        // text between the previous tag and this one
         if (auto sv = src.substr(pos, openCurly - pos); !sv.empty()) {
             open.back().list->emplace_back(Node::Kind::Text, std::string(sv));
         }
 
+        // {{{x}}} = raw (unescaped) variable, closes with }}}
         if (src.substr(openCurly).starts_with("{{{")) {
             auto closeCurly = src.find("}}}", openCurly + 3);
             if (closeCurly == npos) // Did not find a matching closing }}}
@@ -181,6 +189,7 @@ auto parse(std::string_view src) -> Nodes {
 
         auto sv = src.substr(openCurly + 2, closeCurly - (openCurly + 2));
         auto tag = trim(sv);
+        // end of section: must match the innermost open section
         if (tag.starts_with('/')) {
             tag = trim(tag.substr(1));
 
@@ -191,18 +200,114 @@ auto parse(std::string_view src) -> Nodes {
             pos = closeCurly + 2;
             continue;
         }
+        // comment: produces no node
         if (tag.starts_with('!')) {
             pos = closeCurly + 2;
             continue;
         }
         auto node = classify(sv);
         open.back().list->emplace_back(node);
+        // enter the section: following nodes go into its children
         if (node.kind == Node::Kind::Section || node.kind == Node::Kind::Inverted) {
             open.emplace_back(&open.back().list->back().children, node.value);
         }
 
         pos = closeCurly + 2;
     }
+    // a section was opened but never closed
     if (open.size() > 1) throw ParseError("unclosed section");
     return nodes;
+}
+
+// loads and parses every .html template under dir (recursively) once, at startup
+TemplateSet::TemplateSet(const std::filesystem::path &dir) {
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(dir)) {
+        // only regular .html files are templates
+        if (!entry.is_regular_file() || entry.path().extension() != ".html") continue;
+        // template name = path relative to dir, e.g. "partials/footer.html"
+        auto key = std::filesystem::relative(entry.path(),dir).generic_string();
+
+        // read the whole file into a string
+        std::ifstream file(entry.path(),std::ios::binary);
+        if (!file) throw std::runtime_error("failed to open " + key);
+        std::string body(std::istreambuf_iterator<char>(file), {});
+
+        // parse once and cache the tree; prefix parse errors with the file name
+        try {
+            _templates[key] = parse(body);
+        } catch (const ParseError& e) {
+            throw ParseError(key + ": " + e.what());
+        }
+    }
+}
+
+// public entry: renders template `name` with `context` as the root scope
+auto TemplateSet::render(const std::string &name, const json::value &context) const -> std::string {
+    std::string out{};
+    std::vector<const json::value*> stack{&context}; // scope stack, starts with the whole JSON
+    renderNodes(_templates.at(name),stack,out,0);
+
+    return out;
+}
+// walks the tree and appends each node's output; recurses into section children
+auto TemplateSet::renderNodes(const Nodes& nodes, std::vector<const json::value*>& stack, std::string& out, int depth) const -> void {
+
+    // guard against infinite recursion (e.g. a partial including itself)
+    if (depth >32) throw std::runtime_error("depth is over the limit");
+
+    for (const auto &[kind, value, children]: nodes) {
+        switch (kind) {
+            // literal template text, copied as-is
+            case Node::Kind::Text: {
+                out += value;
+                break;
+            }
+            // {{x}}: look up and append HTML-escaped; missing → nothing
+            case Node::Kind::Var: {
+                if (auto ptr = findValue(stack, value))
+                    appendHtmlEscaped(out, valueToString(*ptr));
+                break;
+            }
+            // {{{x}}} / {{&x}}: same as Var but without escaping
+            case Node::Kind::Raw: {
+                if (auto ptr = findValue(stack, value))
+                    out += valueToString(*ptr);
+                break;
+            }
+            // {{#x}}: skip if falsy; loop arrays, enter objects, else render once
+            case Node::Kind::Section: {
+                if (auto val = findValue(stack, value); isTruthy(val)) {
+                    // array: render children once per item, item on top of the stack
+                    if (val->is_array()) {
+                        for (const auto &v: val->get_array()) {
+                            stack.emplace_back(&v);
+                            renderNodes(children, stack, out, depth + 1);
+                            stack.pop_back();
+                        }
+                    // object: enter its scope once
+                    } else if (val->is_object()) {
+                        stack.emplace_back(val);
+                        renderNodes(children, stack, out, depth + 1);
+                        stack.pop_back();
+                    // true / number / string: render once, no new scope
+                    } else renderNodes(children, stack, out, depth + 1);
+                }
+                break;
+            }
+            // {{^x}}: render once only if x is falsy/missing
+            case Node::Kind::Inverted: {
+                if (!isTruthy(findValue(stack, value)))
+                    renderNodes(children, stack, out, depth + 1);
+                break;
+            }
+            // {{>name}}: render another template with the current scope stack
+            case Node::Kind::Partial: {
+                auto it = _templates.find(value);
+                if (it == _templates.cend())
+                    throw std::runtime_error(std::format("unknown partial {}", value));
+                renderNodes(it->second, stack, out, depth + 1);
+                break;
+            }
+        }
+    }
 }

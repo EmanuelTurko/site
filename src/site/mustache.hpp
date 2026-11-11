@@ -25,7 +25,7 @@ auto parse(std::string_view src) -> Nodes;
 class TemplateSet {
 public:
     explicit TemplateSet(const std::filesystem::path& dir);
-    auto redner(const std::string& name, const json::value& context) const -> std::string;
+    auto render(const std::string& name, const json::value& context) const -> std::string;
 
 private:
     auto renderNodes(const Nodes& nodes, std::vector<const json::value*>& stack,
