@@ -20,7 +20,7 @@ struct ParseError : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 
-Nodes parse(std::string_view source);
+auto parse(std::string_view src) -> Nodes;
 
 class TemplateSet {
 public:
