@@ -3,6 +3,7 @@
 #include <fstream>
 
 #include "http/common.hpp"
+#include "util/fileio.hpp"
 
 namespace {
     template<class T>
@@ -30,16 +31,7 @@ namespace {
 
 auto loadConfig(const std::filesystem::path &file)->Config {
 
-    std::ifstream f(file,std::ios::binary);
-    if (!f) {
-        throw std::runtime_error(std::format("could not open {}",file.string()));
-    }
-    std::string body(std::istreambuf_iterator<char>(f),{});
-    boost::system::error_code ec;
-    auto v = json::parse(std::move(body),ec);
-    if (ec || !v.is_object())
-        throw std::runtime_error(std::format("config must be a JSON object: {},{}",file.string(),ec.message()));
-
+    auto v = readJson(file);
     const auto& obj = *v.if_object();
     const auto base = file.parent_path();
     Config cfg{};

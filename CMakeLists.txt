@@ -15,6 +15,7 @@ add_executable(site
         src/http/staticFiles.cpp
         src/config.cpp
         src/site/mustache.cpp
+        src/page.cpp
         )
 
 target_include_directories(site PRIVATE src)

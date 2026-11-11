@@ -6,6 +6,8 @@
 #include <format>
 #include <algorithm>
 
+#include "util/fileio.hpp"
+
 namespace mustache {
     namespace {
         // appends s to the end of out. replaces special characters that mean something in HTML - prevents XSS
@@ -241,9 +243,7 @@ namespace mustache {
             auto key = std::filesystem::relative(entry.path(), dir).generic_string();
 
             // read the whole file into a string
-            std::ifstream file(entry.path(), std::ios::binary);
-            if (!file) throw std::runtime_error("failed to open " + key);
-            std::string body(std::istreambuf_iterator<char>(file), {});
+            auto body = readFile(entry.path());
 
             // parse once and cache the tree; prefix parse errors with the file name
             try {

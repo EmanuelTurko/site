@@ -5,11 +5,11 @@
 #include "http/server.hpp"
 #include "http/staticFiles.hpp"
 #include "config.hpp"
+#include "page.hpp"
 
 
 
 int main(int argc,char* argv[]) {
-
     std::filesystem::path path;
     if (argc>1)
         path = argv[1];
@@ -17,8 +17,10 @@ int main(int argc,char* argv[]) {
 
     Config cfg{};
     tcp::endpoint endpoint{};
+    std::optional<Page> page{};
     try {
         cfg = loadConfig(path);
+        page.emplace(cfg.root,cfg.reload); // optional page is assigned here
         endpoint.address(asio::ip::make_address(cfg.address));
         endpoint.port(cfg.port); //basic tcp endpoint construction
     } catch (const std::exception &e) {
@@ -26,11 +28,42 @@ int main(int argc,char* argv[]) {
         return 1;
     }
 
+    Stats stats{};
     Router router{};
     std::filesystem::path root{cfg.root};
     router.getPrefix("/static/",staticFiles(root / "static","/static/"));
 
-    Stats stats{};
+
+    router.get("/",
+               [&page,&stats](const Request &, const std::string &) -> asio::awaitable<Response> {
+                   json::object runtime{
+                       {
+                           "stats", {
+                               {"uptime", Stats::formatUptime(stats.uptimeSeconds())},
+                               {"requests", stats.requests() + 1}
+                           }
+                       },
+                       {"playground_enabled", false},
+                       {"redis_enabled", false}
+                   };
+                   try {
+                     auto html = page->render(runtime);
+                       co_return makeResponse(http::status::ok, html, "text/html; charset=utf-8");
+                   } catch (const std::exception& e) {
+                       logging::error(e.what());
+                       auto body = std::format("template error: {}\n", e.what());
+                       co_return makeResponse(http::status::internal_server_error,body,"text/plain");
+                   }
+               });
+    router.get("/api/stats",
+           [&stats](const Request &, const std::string &) -> asio::awaitable<Response> {
+               json::object runtime{
+                           {"uptime_s", stats.uptimeSeconds()},
+                            {"requests", stats.requests()},
+                            {"avg_us", stats.avgMicroseconds()}
+               };
+               co_return makeResponse(http::status::ok,json::serialize(runtime),"application/json");
+           });
     asio::io_context ioc(cfg.threads);
     Server server(ioc,endpoint,router,stats);
 
