@@ -2,9 +2,11 @@
 
 #include <ranges>
 #include <fstream>
+#include <sstream>
+#include <format>
 
 
-namespace {
+namespace mustache {
     // appends s to the end of out. replaces special characters that mean something in HTML - prevents XSS
     auto appendHtmlEscaped(std::string &out, std::string_view s) -> void {
         for (const auto c: s) {
@@ -24,15 +26,16 @@ namespace {
             }
         }
     }
+
     // turns any JSON val into the text that should appear
-    auto valueToString(const json::value& v) -> std::string {
+    auto valueToString(const json::value &v) -> std::string {
         switch (v.kind()) {
             case json::kind::string:
                 return std::string(v.get_string());
             case json::kind::bool_:
-                return v.get_bool()? "true" : "false";
+                return v.get_bool() ? "true" : "false";
             case json::kind::int64:
-               return std::to_string(v.get_int64());
+                return std::to_string(v.get_int64());
             case json::kind::uint64:
                 return std::to_string(v.get_uint64());
             case json::kind::null:
@@ -45,15 +48,16 @@ namespace {
                 return oss.str();
             }
         }
+        return {};
     }
 
     // decides whether a section should be shown
-    auto isTruthy(const json::value* v) -> bool {
+    auto isTruthy(const json::value *v) -> bool {
         if (!v) return false;
 
         switch (v->kind()) {
             case json::kind::null:
-            return false;
+                return false;
             case json::kind::bool_:
                 return v->get_bool();
             case json::kind::array:
@@ -68,42 +72,42 @@ namespace {
         }
         return false;
     }
+
     // helper for findValue. recursion walk for a.b.c
-    auto walk(const json::value* v,std::string_view sv) -> const json::value* {
+    auto walk(const json::value *v, std::string_view sv) -> const json::value * {
         std::string_view rest{};
         if (const auto dot = sv.find('.'); dot != std::string_view::npos) {
-            rest = sv.substr(dot +1);
-            sv = sv.substr(0,dot);
+            rest = sv.substr(dot + 1);
+            sv = sv.substr(0, dot);
         }
         if (v->kind() == json::kind::object) {
             if (auto it = v->get_object().find(sv);
                 it != v->get_object().cend()) {
-                return rest.empty()? &it->value() : walk(&it->value(),rest);
-                }
+                return rest.empty() ? &it->value() : walk(&it->value(), rest);
+            }
         }
         return nullptr;
     }
 
     // finds the JSON val a tag like {{name}} or {{project.title}} refers to.
-    auto findValue(const std::vector<const json::value*>& stack,std::string_view name) -> const json::value* {
-
+    auto findValue(const std::vector<const json::value *> &stack, std::string_view name) -> const json::value * {
         if (name == ".") return stack.back();
         if (const auto dot = name.find('.'); dot != std::string_view::npos) {
-            const auto rest = name.substr(dot +1);
-            name = name.substr(0,dot);
-            for (const auto s : stack | std::views::reverse) {
+            const auto rest = name.substr(dot + 1);
+            name = name.substr(0, dot);
+            for (const auto s: stack | std::views::reverse) {
                 if (s->kind() == json::kind::object) {
                     if (const auto it = s->get_object().find(name);
                         it != s->get_object().cend()) {
-                        return walk(&it->value(),rest);
+                        return walk(&it->value(), rest);
                     }
                 }
             }
             return nullptr;
         }
-        for (const auto s : stack | std::views::reverse) {
+        for (const auto s: stack | std::views::reverse) {
             if (s->kind() == json::kind::object) {
-                if (const auto it = s->get_object().find(name); it!= s->get_object().cend()) return &it->value();
+                if (const auto it = s->get_object().find(name); it != s->get_object().cend()) return &it->value();
             }
         }
         return nullptr;
@@ -113,35 +117,38 @@ namespace {
         auto start = s.find_first_not_of(" \t");
         if (start == std::string_view::npos) return "";
         auto end = s.find_last_not_of(" \t");
-        return s.substr(start,end - start +1);
-
+        return s.substr(start, end - start + 1);
     }
+
     auto classify(std::string_view s) -> Node {
-        const auto sv = trim(s);
+        auto sv = trim(s);
         if (sv.empty()) throw ParseError("empty tag");
 
+        Node::Kind kind{};
         switch (sv[0]) {
             case '&':
-                return Node{
-                    .kind = Node::Kind::Raw,
-                    .value = std::string(trim(sv.substr(1)))};
+                kind = Node::Kind::Raw;
+                break;
             case '>':
-                return Node{
-                    .kind = Node::Kind::Partial,
-                    .value = std::string(trim(sv.substr(1)))};
+                kind = Node::Kind::Partial;
+                break;
             case '#':
-                return Node{
-                    .kind = Node::Kind::Section,
-                    .value = std::string(trim(sv.substr(1)))};
+                kind = Node::Kind::Section;
+                break;
             case '^':
-                return Node{
-                    .kind = Node::Kind::Inverted,
-                    .value = std::string(trim(sv.substr(1)))};
+                kind = Node::Kind::Inverted;
+                break;
             default:
-                return Node{
-                    .kind = Node::Kind::Var,
-                    .value = std::string(sv)};
+                kind = Node::Kind::Var;
+                break;
         }
+        if (kind != Node::Kind::Var) sv = trim(sv.substr(1));
+        if (sv.empty()) throw ParseError("empty name");
+        return Node{.kind = kind, .value = std::string(sv)};
+    }
+
+    auto lineOf(std::string_view src, size_t pos) -> int {
+        return static_cast<int>(std::count(src.begin(), src.begin() + pos, '\n') + 1);
     }
 }
 
@@ -176,25 +183,29 @@ auto parse(std::string_view src) -> Nodes {
         if (src.substr(openCurly).starts_with("{{{")) {
             auto closeCurly = src.find("}}}", openCurly + 3);
             if (closeCurly == npos) // Did not find a matching closing }}}
-                throw ParseError("Did not find matching }}}"); // TODO add line num
+                throw ParseError(std::format("Did not find matching {} at {}", "}}}",
+                                             mustache::lineOf(src, openCurly)));
 
-            auto sv = trim(src.substr(openCurly + 3, closeCurly - (openCurly + 3)));
+            auto sv = mustache::trim(src.substr(openCurly + 3, closeCurly - (openCurly + 3)));
+            if (sv.empty()) throw ParseError(std::format("empty name at {}", mustache::lineOf(src, closeCurly)));
             open.back().list->emplace_back(Node::Kind::Raw, std::string(sv));
             pos = closeCurly + 3;
             continue;
         }
         auto closeCurly = src.find("}}", openCurly + 2);
         if (closeCurly == npos) // Did not find a matching closing }}
-            throw ParseError("Did not find matching }}"); // TODO add line num
+            throw ParseError(std::format("Did not find matching {} at {}", "}}", mustache::lineOf(src, openCurly)));
 
         auto sv = src.substr(openCurly + 2, closeCurly - (openCurly + 2));
-        auto tag = trim(sv);
+        auto tag = mustache::trim(sv);
         // end of section: must match the innermost open section
         if (tag.starts_with('/')) {
-            tag = trim(tag.substr(1));
+            tag = mustache::trim(tag.substr(1));
+            if (tag.empty()) throw ParseError(std::format("empty name at {}", mustache::lineOf(src, closeCurly)));
 
             if (open.size() <= 1 || open.back().name != tag)
-                throw ParseError("Did not find matching closing section '/'");
+                throw ParseError(std::format("Did not find matching closing section '/' at {}",
+                                             mustache::lineOf(src, pos)));
 
             open.pop_back();
             pos = closeCurly + 2;
@@ -205,7 +216,7 @@ auto parse(std::string_view src) -> Nodes {
             pos = closeCurly + 2;
             continue;
         }
-        auto node = classify(sv);
+        auto node = mustache::classify(sv);
         open.back().list->emplace_back(node);
         // enter the section: following nodes go into its children
         if (node.kind == Node::Kind::Section || node.kind == Node::Kind::Inverted) {
@@ -215,27 +226,27 @@ auto parse(std::string_view src) -> Nodes {
         pos = closeCurly + 2;
     }
     // a section was opened but never closed
-    if (open.size() > 1) throw ParseError("unclosed section");
+    if (open.size() > 1) throw ParseError(std::format("unclosed section '/' {}", mustache::lineOf(src, pos)));
     return nodes;
 }
 
 // loads and parses every .html template under dir (recursively) once, at startup
 TemplateSet::TemplateSet(const std::filesystem::path &dir) {
-    for (const auto& entry : std::filesystem::recursive_directory_iterator(dir)) {
+    for (const auto &entry: std::filesystem::recursive_directory_iterator(dir)) {
         // only regular .html files are templates
         if (!entry.is_regular_file() || entry.path().extension() != ".html") continue;
         // template name = path relative to dir, e.g. "partials/footer.html"
-        auto key = std::filesystem::relative(entry.path(),dir).generic_string();
+        auto key = std::filesystem::relative(entry.path(), dir).generic_string();
 
         // read the whole file into a string
-        std::ifstream file(entry.path(),std::ios::binary);
+        std::ifstream file(entry.path(), std::ios::binary);
         if (!file) throw std::runtime_error("failed to open " + key);
         std::string body(std::istreambuf_iterator<char>(file), {});
 
         // parse once and cache the tree; prefix parse errors with the file name
         try {
             _templates[key] = parse(body);
-        } catch (const ParseError& e) {
+        } catch (const ParseError &e) {
             throw ParseError(key + ": " + e.what());
         }
     }
@@ -244,16 +255,18 @@ TemplateSet::TemplateSet(const std::filesystem::path &dir) {
 // public entry: renders template `name` with `context` as the root scope
 auto TemplateSet::render(const std::string &name, const json::value &context) const -> std::string {
     std::string out{};
-    std::vector<const json::value*> stack{&context}; // scope stack, starts with the whole JSON
-    renderNodes(_templates.at(name),stack,out,0);
+    std::vector<const json::value *> stack{&context}; // scope stack, starts with the whole JSON
+    renderNodes(_templates.at(name), stack, out, 0);
 
     return out;
 }
-// walks the tree and appends each node's output; recurses into section children
-auto TemplateSet::renderNodes(const Nodes& nodes, std::vector<const json::value*>& stack, std::string& out, int depth) const -> void {
 
+// walks the tree and appends each node's output; recurses into section children
+auto TemplateSet::renderNodes(const Nodes &nodes, std::vector<const json::value *> &stack, std::string &out,
+                              int depth) const -> void {
+    using namespace mustache;
     // guard against infinite recursion (e.g. a partial including itself)
-    if (depth >32) throw std::runtime_error("depth is over the limit");
+    if (depth > 32) throw std::runtime_error("depth is over the limit");
 
     for (const auto &[kind, value, children]: nodes) {
         switch (kind) {
@@ -284,12 +297,12 @@ auto TemplateSet::renderNodes(const Nodes& nodes, std::vector<const json::value*
                             renderNodes(children, stack, out, depth + 1);
                             stack.pop_back();
                         }
-                    // object: enter its scope once
+                        // object: enter its scope once
                     } else if (val->is_object()) {
                         stack.emplace_back(val);
                         renderNodes(children, stack, out, depth + 1);
                         stack.pop_back();
-                    // true / number / string: render once, no new scope
+                        // true / number / string: render once, no new scope
                     } else renderNodes(children, stack, out, depth + 1);
                 }
                 break;
