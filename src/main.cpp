@@ -6,13 +6,18 @@
 #include "http/staticFiles.hpp"
 #include "config.hpp"
 
-constexpr int numThreads = 2;
 
 
-int main() {
+int main(int argc,char* argv[]) {
+
+    std::filesystem::path path;
+    if (argc>1)
+        path = argv[1];
+    else path = std::filesystem::path(SITE_DEFAULT_ROOT) / "config.json";
+
     Config cfg{};
     try {
-         cfg = loadConfig(std::filesystem::path(SITE_DEFAULT_ROOT) / "config.json");
+         cfg = loadConfig(path);
     } catch (const std::exception& e) {
         logging::error(e.what());
         return 1;
@@ -27,7 +32,7 @@ int main() {
     endpoint.port(cfg.port); //basic tcp endpoint construction
 
     Stats stats{};
-    asio::io_context ioc(numThreads);
+    asio::io_context ioc(cfg.threads);
     Server server(ioc,endpoint,router,stats);
     server.start();
 
@@ -36,10 +41,10 @@ int main() {
         [&ioc](const beast::error_code&,int) {
             ioc.stop();
         });
-    logging::info(std::format("listening on http://localhost:{} with {} io threads",cfg.port,numThreads));
+    logging::info(std::format("listening on http://localhost:{} with {} io threads",cfg.port,cfg.threads));
 
     std::vector<std::thread> threads;
-    for (auto i=0; i < numThreads-1;++i) {
+    for (unsigned i=0; i < cfg.threads-1;++i) {
         threads.emplace_back([&ioc]() {
             ioc.run();
         });

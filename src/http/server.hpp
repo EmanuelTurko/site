@@ -17,10 +17,11 @@ public:
     private:
     auto listen() -> asio::awaitable<void>;
     auto session(tcp::socket socket) -> asio::awaitable<void>;
-    auto isNormalClose(const system_error &e) -> bool;
+
+    static auto isNormalClose(const system_error &e) -> bool;
 
     asio::io_context& _ioc;
-    tcp::endpoint _endpoint{};
+    tcp::endpoint _endpoint;
     const Router& _router{};
     Stats& _stats;
 };

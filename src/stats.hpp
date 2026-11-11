@@ -3,6 +3,7 @@
 #include <chrono>
 #include <format>
 #include <atomic>
+#include <string>
 
 class Stats {
 public:

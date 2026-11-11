@@ -1,5 +1,4 @@
 #include "router.hpp"
-#include <iostream>
 
 auto Router::get(std::string path, Handler h) -> void {
     add(http::verb::get, std::move(path), false, std::move(h));

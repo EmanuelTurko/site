@@ -1,5 +1,6 @@
 #pragma once
 #include <filesystem>
+#include <string>
 
 struct Config {
     std::filesystem::path root{}; // templates/, static/ content/ live here

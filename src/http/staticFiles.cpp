@@ -29,7 +29,7 @@ namespace {
       }
       return true;
    }
-};
+}
 
 auto staticFiles(std::filesystem::path dir, std::string urlPrefix) -> Handler {
    return [dir,urlPrefix](const Request& req,const std::string&)-> asio::awaitable<Response> {
@@ -37,8 +37,9 @@ auto staticFiles(std::filesystem::path dir, std::string urlPrefix) -> Handler {
       sv = sv.substr(0,sv.find('?'));
       sv = sv.substr(urlPrefix.size());
 
+      std::error_code ec{};
       std::filesystem::path path = dir / sv;
-      if (!safeRelative(sv) || !is_regular_file(path))
+      if (!safeRelative(sv) || !is_regular_file(path,ec))
          co_return makeResponse(http::status::not_found, "404 not found\n","text/plain");
 
       std::ifstream file(path,std::ios::binary);

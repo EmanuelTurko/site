@@ -2,13 +2,6 @@
 #include "util/logging.hpp"
 
 auto Server::start() -> void {
-    /* _router.get("/ping",
-         [](const Request&, const std::string& ip) ->
-         asio::awaitable<Response> {
-             co_return makeResponse(http::status::ok, "pong\n", "text/plain");
-         });*/
-
-    // starts a coroutine
     asio::co_spawn(_ioc, listen(), [](const std::exception_ptr &e) {
         try {
             if (e) std::rethrow_exception(e);
@@ -17,6 +10,7 @@ auto Server::start() -> void {
         }
     });
 }
+
 auto Server::listen() -> asio::awaitable<void> {
     try {
         auto executor = co_await asio::this_coro::executor; // executor holds the reference to the event loop
@@ -31,7 +25,8 @@ auto Server::listen() -> asio::awaitable<void> {
             asio::co_spawn(executor, session(std::move(socket)), asio::detached);
             // start a new coroutine with socket ownership
         }
-    } catch (const system_error& e) {
+    } catch (const system_error &e) {
+        _ioc.stop();
         logging::error(e.what());
     }
 }
@@ -41,48 +36,51 @@ auto Server::session(tcp::socket socket) -> asio::awaitable<void> {
     beast::flat_buffer buffer{};
     boost::system::error_code ec{};
 
-    constexpr std::uint64_t limit = 64*1024;
+    constexpr std::uint64_t limit = 64 * 1024;
     auto ip = stream.socket().remote_endpoint(ec).address().to_string();
 
-try {
-    while (true) {
+    try {
+        while (true) {
+            stream.expires_after(std::chrono::seconds(30));
 
-        stream.expires_after(
-            asio::steady_timer::duration(
-                std::chrono::seconds(30))
-                );
+            auto parser = http::request_parser<http::string_body>();
+            parser.body_limit(limit);
 
-        auto parser = http::request_parser<http::string_body>();
-        parser.body_limit(limit);
+            co_await http::async_read(stream, buffer, parser, asio::use_awaitable);
+            auto req = parser.release();
 
-        co_await http::async_read(stream, buffer, parser, asio::use_awaitable);
-        auto req = parser.release();
+            auto start = std::chrono::steady_clock::now();
+            Response res{};
+            try {
+                res = co_await _router.dispatch(req, ip);
+            } catch (const std::exception &e) {
+                logging::error(e.what());
+                res = makeResponse(http::status::internal_server_error, "internal server error", "text/plain");
+            }
+            _stats.record(
+                duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - start)
+            );
 
-        auto start = std::chrono::steady_clock::now();
-        auto res = co_await _router.dispatch(req,ip);
-        _stats.record(
-            duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now() - start)
-                );
+            res.keep_alive(req.keep_alive());
+            res.version(req.version());
+            res.set(http::field::server, "emanuel-site (C++20, Boost.Beast)");
+            res.prepare_payload();
 
-        res.keep_alive(req.keep_alive());
-        res.version(req.version());
-        res.set(http::field::server,"emanuel-site (C++20, Boost.Beast)" );
-        res.prepare_payload();
-
-        co_await http::async_write(stream,res,asio::use_awaitable);
-        if (!res.keep_alive()) break;
-    }
-} catch (const system_error& e) {
-            if (!isNormalClose(e))
-                logging::warn(ip + " " + e.what());
+            co_await http::async_write(stream, res, asio::use_awaitable);
+            if (!res.keep_alive()) break;
         }
+    } catch (const system_error &e) {
+        if (!isNormalClose(e))
+            logging::warn(ip + " " + e.what());
+    }
     stream.socket().shutdown(asio::socket_base::shutdown_send, ec);
 }
-auto Server::isNormalClose(const system_error& e) -> bool {
+
+auto Server::isNormalClose(const system_error &e) -> bool {
     return e.code() == http::error::end_of_stream ||
-         e.code() == beast::error::timeout ||
-            e.code() == asio::error::connection_reset ||
-                e.code() == asio::error::eof ||
-                    e.code() == asio::error::operation_aborted;
+           e.code() == beast::error::timeout ||
+           e.code() == asio::error::connection_reset ||
+           e.code() == asio::error::eof ||
+           e.code() == asio::error::operation_aborted;
 }

@@ -3,6 +3,8 @@
 #include "common.hpp"
 
 #include <string>
+#include <vector>
+
 
 class Router {
 public:
