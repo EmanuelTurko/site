@@ -2,6 +2,6 @@
 cmake-build-*/
 build/
 config.local.json
-templates/
-static/
-content/
+templates/*
+static/*
+content/*

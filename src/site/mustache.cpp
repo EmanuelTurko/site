@@ -230,7 +230,7 @@ namespace mustache {
             pos = closeCurly + 2;
         }
         // a section was opened but never closed
-        if (open.size() > 1) throw ParseError(std::format("unclosed section '/' {},{}",open.back().name,lineOf(src, open.back().line)));
+        if (open.size() > 1) throw ParseError(std::format("unclosed section #{} at line {}",open.back().name,open.back().line));
         return nodes;
     }
 
