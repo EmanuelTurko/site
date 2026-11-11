@@ -16,25 +16,30 @@ int main(int argc,char* argv[]) {
     else path = std::filesystem::path(SITE_DEFAULT_ROOT) / "config.json";
 
     Config cfg{};
+    tcp::endpoint endpoint{};
     try {
-         cfg = loadConfig(path);
-    } catch (const std::exception& e) {
+        cfg = loadConfig(path);
+        endpoint.address(asio::ip::make_address(cfg.address));
+        endpoint.port(cfg.port); //basic tcp endpoint construction
+    } catch (const std::exception &e) {
         logging::error(e.what());
         return 1;
     }
 
     Router router{};
-    std::filesystem::path root{SITE_DEFAULT_ROOT};
+    std::filesystem::path root{cfg.root};
     router.getPrefix("/static/",staticFiles(root / "static","/static/"));
-
-    tcp::endpoint endpoint{};
-    endpoint.address(asio::ip::make_address(cfg.address));
-    endpoint.port(cfg.port); //basic tcp endpoint construction
 
     Stats stats{};
     asio::io_context ioc(cfg.threads);
     Server server(ioc,endpoint,router,stats);
-    server.start();
+
+    try {
+        server.start();
+    } catch (const std::exception& e) {
+        logging::error(e.what());
+        return 1;
+    }
 
     asio::signal_set signal(ioc,SIGINT,SIGTERM);
     signal.async_wait(

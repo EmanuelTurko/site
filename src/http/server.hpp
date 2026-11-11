@@ -9,6 +9,7 @@ public:
     Server(asio::io_context& ioc, tcp::endpoint endpoint, const Router& router, Stats& stats) :
     _ioc(ioc),
     _endpoint(std::move(endpoint)),
+    _acceptor(_ioc),
     _router(router),
     _stats(stats){}
 
@@ -22,6 +23,7 @@ public:
 
     asio::io_context& _ioc;
     tcp::endpoint _endpoint;
-    const Router& _router{};
+    tcp::acceptor _acceptor;
+    const Router& _router;
     Stats& _stats;
 };

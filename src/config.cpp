@@ -38,7 +38,7 @@ auto loadConfig(const std::filesystem::path &file)->Config {
     boost::system::error_code ec;
     auto v = json::parse(std::move(body),ec);
     if (ec || !v.is_object())
-        throw std::runtime_error(std::format("invalid JSON: {},{}",file.string(),ec.what()));
+        throw std::runtime_error(std::format("config must be a JSON object: {},{}",file.string(),ec.message()));
 
     const auto& obj = *v.if_object();
     const auto base = file.parent_path();

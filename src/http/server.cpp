@@ -2,6 +2,13 @@
 #include "util/logging.hpp"
 
 auto Server::start() -> void {
+
+    _acceptor.open(_endpoint.protocol()); // get a socket from the OS, type protocol(ipv4/ipv6)
+    _acceptor.set_option(asio::socket_base::reuse_address(true));
+    _acceptor.bind(_endpoint);  // bind to specific addr
+    _acceptor.listen();
+
+
     asio::co_spawn(_ioc, listen(), [](const std::exception_ptr &e) {
         try {
             if (e) std::rethrow_exception(e);
@@ -13,15 +20,9 @@ auto Server::start() -> void {
 
 auto Server::listen() -> asio::awaitable<void> {
     try {
-        auto executor = co_await asio::this_coro::executor; // executor holds the reference to the event loop
-        tcp::acceptor acceptor(executor);
-        acceptor.open(_endpoint.protocol()); // get a socket from the OS, type protocol(ipv4/ipv6)
-        acceptor.set_option(asio::socket_base::reuse_address(true));
-        acceptor.bind(_endpoint); // bind to specific addr
-        acceptor.listen();
-
+        auto executor = co_await asio::this_coro::executor;
         while (true) {
-            auto socket = co_await acceptor.async_accept(asio::use_awaitable); // wait for a client...
+            auto socket = co_await _acceptor.async_accept(asio::use_awaitable); // wait for a client...
             asio::co_spawn(executor, session(std::move(socket)), asio::detached);
             // start a new coroutine with socket ownership
         }

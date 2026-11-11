@@ -160,10 +160,11 @@ namespace mustache {
         struct Pair {
             Nodes *list;
             std::string name;
+            int line;
         };
         Nodes nodes{};
         // starts at the root list; each {{#x}} pushes, each {{/x}} pops
-        std::vector open{Pair{&nodes, ""}};
+        std::vector open{Pair{&nodes, "",lineOf(src,0)}};
         std::size_t pos{};
         constexpr auto npos = std::string_view::npos;
 
@@ -221,13 +222,13 @@ namespace mustache {
             open.back().list->emplace_back(node);
             // enter the section: following nodes go into its children
             if (node.kind == Node::Kind::Section || node.kind == Node::Kind::Inverted) {
-                open.emplace_back(&open.back().list->back().children, node.value);
+                open.emplace_back(&open.back().list->back().children, node.value,lineOf(src,openCurly));
             }
 
             pos = closeCurly + 2;
         }
         // a section was opened but never closed
-        if (open.size() > 1) throw ParseError(std::format("unclosed section '/' {}",lineOf(src, pos)));
+        if (open.size() > 1) throw ParseError(std::format("unclosed section '/' {},{}",open.back().name,lineOf(src, open.back().line)));
         return nodes;
     }
 
@@ -265,7 +266,6 @@ namespace mustache {
     // walks the tree and appends each node's output; recurses into section children
     auto TemplateSet::renderNodes(const Nodes &nodes, std::vector<const json::value *> &stack, std::string &out,
                                   int depth) const -> void {
-        using namespace mustache;
         // guard against infinite recursion (e.g. a partial including itself)
         if (depth > 32) throw std::runtime_error("depth is over the limit");
 
