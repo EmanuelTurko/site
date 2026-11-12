@@ -16,6 +16,7 @@ add_library(sitecore
         src/config.cpp
         src/site/mustache.cpp
         src/page.cpp
+        src/services/redisProxy.cpp
 )
 target_include_directories(sitecore PUBLIC src)
 target_link_libraries(sitecore PUBLIC Boost::headers Threads::Threads)

@@ -11,7 +11,7 @@ public:
     auto get(std::string path, Handler h) -> void; // exact path, GET
     auto post(std::string path, Handler h) -> void; // exact path, POST
     auto getPrefix(std::string prefix, Handler h) -> void;  // any path starting with prefix, GET
-    auto dispatch(const Request& req, const std::string& ip) const -> asio::awaitable<Response>;
+    auto dispatch(const Request& req, const RequestContext& ctx) const -> asio::awaitable<Response>;
     private:
     struct Route {
         http::verb verb{};

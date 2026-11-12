@@ -32,7 +32,7 @@ namespace {
 }
 
 auto staticFiles(std::filesystem::path dir, std::string urlPrefix) -> Handler {
-   return [dir,urlPrefix](const Request& req,const std::string&)-> asio::awaitable<Response> {
+   return [&dir,&urlPrefix](const Request& req,const RequestContext&)-> asio::awaitable<Response> {
       std::string_view sv = req.target();
       sv = sv.substr(0,sv.find('?'));
       sv = sv.substr(urlPrefix.size());

@@ -20,9 +20,14 @@ using system_error = boost::system::system_error;
 using Request = http::request<http::string_body>;
 using Response = http::response<http::string_body>;
 
+// struct to supply neccesities with the request such as ip
+struct RequestContext {
+    std::string ip;
+};
+
 // A handler is a coroutine: it can co_await (network I/O, a hop to a thread
 // pool, ...) and eventually produces a Response.
-using Handler = std::function<asio::awaitable<Response>(const Request&, const std::string& ip)>;
+using Handler = std::function<asio::awaitable<Response>(const Request&, const RequestContext& ctx)>;
 
 inline auto makeResponse(http::status status, std::string body, std::string_view contentType)->Response {
     Response res{status,11};

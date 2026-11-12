@@ -53,7 +53,7 @@ auto Server::session(tcp::socket socket) -> asio::awaitable<void> {
             auto start = std::chrono::steady_clock::now();
             Response res{};
             try {
-                res = co_await _router.dispatch(req, ip);
+                res = co_await _router.dispatch(req, RequestContext{ip});
             } catch (const std::exception &e) {
                 logging::error(e.what());
                 res = makeResponse(http::status::internal_server_error, "internal server error", "text/plain");

@@ -12,14 +12,14 @@ auto Router::getPrefix(std::string prefix, Handler h) -> void {
     add(http::verb::get, std::move(prefix), true, std::move(h));
 }
 
-auto Router::dispatch(const Request &req, const std::string &ip) const -> asio::awaitable<Response> {
+auto Router::dispatch(const Request &req, const RequestContext &ctx) const -> asio::awaitable<Response> {
     std::string_view sv = req.target();
     sv = sv.substr(0, sv.find('?'));
     bool methodNotAllowed{};
 
     for (const auto &[verb, path, prefix, handler]: _routes) {
         if (prefix ? sv.starts_with(path) : sv == path) {
-            if (verb == req.method()) co_return co_await handler(req, ip);
+            if (verb == req.method()) co_return co_await handler(req, ctx);
             methodNotAllowed = true;
         }
     }

@@ -35,7 +35,7 @@ int main(int argc,char* argv[]) {
 
 
     router.get("/",
-               [&page,&stats](const Request &, const std::string &) -> asio::awaitable<Response> {
+               [&page,&stats](const Request &, const RequestContext&) -> asio::awaitable<Response> {
                    json::object runtime{
                        {
                            "stats", {
@@ -56,7 +56,7 @@ int main(int argc,char* argv[]) {
                    }
                });
     router.get("/api/stats",
-           [&stats](const Request &, const std::string &) -> asio::awaitable<Response> {
+           [&stats](const Request &, const RequestContext&) -> asio::awaitable<Response> {
                json::object runtime{
                            {"uptime_s", stats.uptimeSeconds()},
                             {"requests", stats.requests()},
