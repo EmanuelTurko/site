@@ -1,4 +1,5 @@
 #include "redisProxy.hpp"
+#include <cstring>
 
 namespace {
     struct CommandSpec {
@@ -16,6 +17,22 @@ namespace {
         {"zadd", {4,true}},
         {"zquery", {6,true}},
         {"keys", {1,false}},
+    };
+
+    enum class Tag : std::uint8_t {
+        Nil = 0,
+        Error = 1,
+        String = 2,
+        Int64 = 3,
+        Double = 4,
+        Array = 5
+    };
+    struct Err {
+        std::uint32_t code;
+        std::string msg;
+    };
+    struct Reply {
+        std::variant<std::monostate,std::string,Err,std::int64_t,double,std::vector<Reply>> var;
     };
 
     auto splitIntoArgs(std::string_view sv) -> std::vector<std::string> {
@@ -62,11 +79,180 @@ namespace {
         json::array arr{};
         for (const auto&[label, bytes] : segments) {
             json::object obj{
-                {"label", label},
-                {"hex", toHexString(bytes)}
+                    {"label", label},
+                    {"hex", toHexString(bytes)}
             };
             arr.emplace_back(std::move(obj));
         }
         return arr;
     }
+
+    auto encodeU32Le(std::uint32_t v) -> std::string {
+        std::string out(4, '\0');
+        std::memcpy(out.data(),&v,4);
+
+        /* alternative way to store as little-endian
+        std::string out{};
+        for (auto i = 0; i < 4; ++i) {
+            out += static_cast<char>((v >> 8*i) & 0xff);
+        }*/
+        return out;
+    }
+
+    auto getTagName(Tag tag) -> std::string_view {
+        switch (tag) {
+            case Tag::Nil:
+                return "nil";
+            case Tag::Error:
+                return "err";
+            case Tag::String:
+                return "str";
+            case Tag::Int64:
+                return "i64";
+            case Tag::Double:
+                return "f64";
+            case Tag::Array:
+                return "arr";
+            default:
+                return {};
+        }
+    }
+    auto decodeReply(std::string_view buf,std::size_t& pos, std::vector<RedisProxy::Segment>& segments,int depth = 0) -> std::optional<Reply> {
+
+        if (depth > 8) return std::nullopt;
+
+        auto take = [&](size_t n) -> std::optional<std::string_view> {
+            if (n > buf.size() - pos) return std::nullopt;
+
+            auto ptr = reinterpret_cast<const char*>(buf.data() +pos);
+            pos += n;
+            return std::string_view(ptr,n);
+        };
+
+        Tag tag;
+        auto tagChunk = take(1);
+        if (!tagChunk.has_value()) return std::nullopt;
+
+        tag = static_cast<Tag>(static_cast<unsigned char>(tagChunk.value()[0]));
+        segments.emplace_back(RedisProxy::Segment{
+            std::format("tag {}", getTagName(tag)), std::string(tagChunk.value())
+        });
+        pos++;
+        switch (tag) {
+            case Tag::Nil:
+                segments.emplace_back(RedisProxy::Segment{
+                    "tag nil",std::string(*tagChunk)
+                });
+                return Reply{.var = std::monostate{}};
+            case Tag::Error: {
+                segments.emplace_back(RedisProxy::Segment{
+                    "tag err",std::string(*tagChunk)
+                });
+
+                auto codeChunk = take(4);
+                if (!codeChunk.has_value()) return std::nullopt;
+
+                std::uint32_t code{};
+                std::memcpy(&code, codeChunk.value().data(), 4);
+                segments.emplace_back(RedisProxy::Segment
+                    {std::format("code {}", code), std::string(*codeChunk)
+                    });
+
+                auto lenChunk = take(4);
+                if (!lenChunk) return std::nullopt;
+
+                std::uint32_t len{};
+                std::memcpy(&len,lenChunk.value().data(),4);
+                segments.emplace_back(RedisProxy::Segment
+                  {std::format(",len {}", len), std::string(*lenChunk)
+                  });
+
+                auto msgChunk = take(len);
+                if (!msgChunk) return std::nullopt;
+                segments.emplace_back(RedisProxy::Segment
+                  {"msg", std::string(*msgChunk)
+                  });
+
+                return Reply{.var = Err{.code = code, .msg = std::string(*msgChunk)}
+                };
+            }
+            case Tag::String: {
+                segments.emplace_back(RedisProxy::Segment{
+                   "tag str",std::string(*tagChunk)
+               });
+                auto lenChunk = take(4);
+                if (!lenChunk.has_value()) return std::nullopt;
+
+                std::uint32_t len{};
+                std::memcpy(&len, lenChunk.value().data(), 4);
+                segments.emplace_back(RedisProxy::Segment{
+                    std::format("len {}", len), std::string(*lenChunk)});
+
+                auto stringChunk = take(7);
+                if (!stringChunk.has_value()) return std::nullopt;
+
+                std::uint64_t string{};
+                std::memcpy(&string,stringChunk.value().data(),7);
+                segments.emplace_back(RedisProxy::Segment{
+                    std::format("{}", string), std::string(*stringChunk)});
+
+                return Reply{.var = std::string{*stringChunk}};
+            }
+            case Tag::Int64: {
+                segments.emplace_back(RedisProxy::Segment{
+                   "tag i64",std::string(*tagChunk)
+               });
+                auto chunk = take(8);
+                if (!chunk.has_value()) return std::nullopt;
+
+                std::int64_t int64{};
+                std::memcpy(&int64, chunk.value().data(), 8);
+                segments.emplace_back(RedisProxy::Segment{
+                    std::format("{}", int64), std::string(*chunk)});
+
+                return Reply{.var = int64};
+            }
+            case Tag::Double: {
+                segments.emplace_back(RedisProxy::Segment{
+                   "tag f64",std::string(*tagChunk)
+               });
+
+                auto chunk = take(8);
+                if (!chunk.has_value()) return std::nullopt;
+
+                double d{};
+                std::memcpy(&d, chunk.value().data(), 8);
+                std::ostringstream oss;
+                oss << d;
+                segments.emplace_back(RedisProxy::Segment{
+                    oss.str(), std::string(*chunk)});
+
+                return Reply{.var = d};
+            }
+            case Tag::Array: {
+                segments.emplace_back(RedisProxy::Segment{
+                   "tag arr",std::string(*tagChunk)
+               });
+
+                auto countChunk = take(4);
+                if (!countChunk.has_value()) return std::nullopt;
+
+                std::uint32_t count{};
+                std::memcpy(&count, countChunk.value().data(), 4);
+                segments.emplace_back(RedisProxy::Segment{std::format("count {}", count), std::string(countChunk.value())});
+
+                if (count > 10000) return std::nullopt;
+
+                std::vector<Reply> replies{};
+                for (std::uint32_t i = 0; i< count; ++i) {
+                    auto item = decodeReply(buf,pos,segments,depth+1);
+                    if (!item) return std::nullopt;
+                    replies.emplace_back(std::move(*item));
+                }
+                return Reply{.var = replies};
+            }
+            default:
+                return std::nullopt;
+        }
+    };
 }
