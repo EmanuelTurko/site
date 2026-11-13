@@ -33,6 +33,10 @@ namespace {
     };
     struct Reply {
         std::variant<std::monostate,std::string,Err,std::int64_t,double,std::vector<Reply>> var;
+
+        [[nodiscard]] Tag tag() const {
+            return static_cast<Tag>(var.index());
+        };
     };
 
     auto splitIntoArgs(std::string_view sv) -> std::vector<std::string> {
@@ -255,4 +259,43 @@ namespace {
                 return std::nullopt;
         }
     };
+
+    auto redisCliFormatter(const Reply& r, const std::string& indent ="") -> std::string {
+        switch (r.tag()) {
+            default:
+                throw std::runtime_error("unkown tag");
+            case Tag::Nil:
+                return "(nil)";
+            case Tag::Error: {
+                const auto&[code, msg] = std::get<Err>(r.var);
+                return std::format("(error) {}",msg);
+            }
+            case Tag::String: {
+                auto str = std::get<std::string>(r.var);
+                return std::format("\"{}\"",str);
+            }
+            case Tag::Int64: {
+                const auto i64 = std::get<std::int64_t>(r.var);
+                return std::format("(integer) {}",i64);
+            }
+            case Tag::Double: {
+                std::ostringstream oss;
+                oss << ("double") << std::get<double>(r.var);
+                return oss.str();
+            }
+            case Tag::Array:
+                auto replies = std::get<std::vector<Reply>>(r.var);
+                if (replies.empty()) return "(empty array)";
+
+                std::string out;
+                for (std::size_t i = 0 ; i < replies.size(); ++i) {
+                    if (i>0) out += "\n" + indent;
+
+                    std::string prefix = std::format("{}) ", i+1);
+                    std::string child = indent + std::string(prefix.size(), ' ');
+                    out += prefix + redisCliFormatter(replies[i],child);
+                }
+                return out;
+        }
+    }
 }
