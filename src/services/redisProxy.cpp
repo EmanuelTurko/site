@@ -1,6 +1,8 @@
 #include "redisProxy.hpp"
 #include <cstring>
 
+#include "util/logging.hpp"
+
 namespace {
     struct CommandSpec {
         std::size_t argc;
@@ -298,4 +300,64 @@ namespace {
                 return out;
         }
     }
+}
+
+auto RedisProxy::roundTrip(beast::tcp_stream &stream, const std::vector<std::string> &args, std::vector<Segment> *sent) -> asio::awaitable<std::optional<std::string>> {
+
+    stream.expires_after(std::chrono::seconds(1)); // 1 second deadline for read and write
+
+    std::vector<std::uint8_t> payload{};
+    for (const auto& arg : args) {
+        auto lenBytes = encodeU32Le(arg.size());
+        payload.insert(
+            payload.end(),
+            lenBytes.begin(),
+            lenBytes.end());
+        payload.insert(
+            payload.end(),
+            reinterpret_cast<const uint8_t*>(arg.data()),
+            reinterpret_cast<const uint8_t*>(arg.data() + arg.size()));
+    }
+
+
+    auto wRes = co_await asio::async_write(stream,asio::buffer(payload),asio::as_tuple(asio::use_awaitable));
+    if (auto ec = std::get<0>(wRes)) {
+        if (ec == asio::error::timed_out)
+            logging::error("Write timed out");
+        co_return std::nullopt;
+    }
+
+    std::uint8_t header[4];
+    auto hRes = co_await asio::async_read(stream,asio::buffer(header),asio::as_tuple(asio::use_awaitable)); // get the length N of the reply
+    if (auto ec = std::get<0>(hRes)) {
+        if (ec == asio::error::timed_out)
+            logging::error("Header timed out");
+        co_return std::nullopt;
+    }
+
+    auto headerLen =
+        static_cast<uint32_t>(header[0]) |
+            static_cast<uint32_t>(header[1]) << 8 |
+                static_cast<uint32_t>(header[2]) << 16 |
+                    static_cast<uint32_t>(header[3]) << 24;
+
+    constexpr std::uint32_t maxPayloadSize = 64*1024;
+    if (headerLen> maxPayloadSize) co_return std::nullopt;
+
+    std::string s(headerLen,'\0');
+    auto rRes = co_await asio::async_read(stream,asio::buffer(s),asio::as_tuple(asio::use_awaitable));
+    if (auto ec = std::get<0>(rRes)) {
+        if (ec == asio::error::timed_out)
+            logging::error("Read timed out");
+        co_return std::nullopt;
+    }
+
+    size_t pos{};
+    std::vector<Segment> segments{};
+    auto reply = decodeReply(s,pos,segments);
+    if (!reply) co_return std::nullopt;
+
+    if (sent != nullptr) *sent = std::move(segments);
+
+    co_return s;
 }
