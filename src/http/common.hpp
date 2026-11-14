@@ -22,7 +22,7 @@ using Response = http::response<http::string_body>;
 
 // struct to supply neccesities with the request such as ip
 struct RequestContext {
-    std::string ip;
+    std::string remoteIp;
 };
 
 // A handler is a coroutine: it can co_await (network I/O, a hop to a thread

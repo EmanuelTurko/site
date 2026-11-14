@@ -16,7 +16,9 @@ public:
         std::string bytes; // the raw bytes of that piece
     };
 
-    explicit RedisProxy(Config cfg);
+    explicit RedisProxy(Config cfg):
+    _cfg(std::move(cfg)){}
+
     auto enabled() const -> bool; // true if _cfg.host isn't empty
     auto config() const -> const Config&;
     auto handle(const Request& req, const RequestContext& ctx) -> asio::awaitable<Response>;

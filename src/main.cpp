@@ -6,7 +6,7 @@
 #include "http/staticFiles.hpp"
 #include "config.hpp"
 #include "page.hpp"
-
+#include "services/redisProxy.hpp"
 
 
 int main(int argc,char* argv[]) {
@@ -28,12 +28,13 @@ int main(int argc,char* argv[]) {
         return 1;
     }
 
+    RedisProxy::Config redisCfg{.host = cfg.redis.host, .port = cfg.redis.port};
+    RedisProxy rd(redisCfg);
+
     Stats stats{};
     Router router{};
     std::filesystem::path root{cfg.root};
     router.getPrefix("/static/",staticFiles(root / "static","/static/"));
-
-
     router.get("/",
                [&page,&stats](const Request &, const RequestContext&) -> asio::awaitable<Response> {
                    json::object runtime{
@@ -64,6 +65,10 @@ int main(int argc,char* argv[]) {
                };
                co_return makeResponse(http::status::ok,json::serialize(runtime),"application/json");
            });
+    router.post("/api/redis",
+        [&rd](const Request& req,const RequestContext& ctx) -> asio::awaitable<Response> {
+            co_return co_await rd.handle(req,ctx);
+        });
     asio::io_context ioc(cfg.threads);
     Server server(ioc,endpoint,router,stats);
 

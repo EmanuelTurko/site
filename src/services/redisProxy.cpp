@@ -8,17 +8,18 @@ namespace {
         std::size_t argc;
         bool hasKey;
     };
-    const std::unordered_map<std::string,CommandSpec> kCommands = {
-        {"get", {2,true}},
-        {"del", {2,true}},
-        {"pttl", {2,true}},
-        {"set", {3,true}},
-        {"pexpire", {3,true}},
-        {"zrem", {3,true}},
-        {"zscore", {3,true}},
-        {"zadd", {4,true}},
-        {"zquery", {6,true}},
-        {"keys", {1,false}},
+
+    const std::unordered_map<std::string, CommandSpec> kCommands = {
+        {"get", {2, true}},
+        {"del", {2, true}},
+        {"pttl", {2, true}},
+        {"set", {3, true}},
+        {"pexpire", {3, true}},
+        {"zrem", {3, true}},
+        {"zscore", {3, true}},
+        {"zadd", {4, true}},
+        {"zquery", {6, true}},
+        {"keys", {1, false}},
     };
 
     enum class Tag : std::uint8_t {
@@ -29,12 +30,14 @@ namespace {
         Double = 4,
         Array = 5
     };
+
     struct Err {
         std::uint32_t code;
         std::string msg;
     };
+
     struct Reply {
-        std::variant<std::monostate,std::string,Err,std::int64_t,double,std::vector<Reply>> var;
+        std::variant<std::monostate, std::string, Err, std::int64_t, double, std::vector<Reply> > var;
 
         [[nodiscard]] Tag tag() const {
             return static_cast<Tag>(var.index());
@@ -50,21 +53,22 @@ namespace {
             sv = sv.substr(start);
 
             if (sv[0] == '"') {
-                auto end = sv.find('"',1);
+                auto end = sv.find('"', 1);
                 if (end == npos) throw std::runtime_error("unclosed quotes");
 
-                v.emplace_back(sv.substr(1,end-1));
-                sv = sv.substr(end+1);
+                v.emplace_back(sv.substr(1, end - 1));
+                sv = sv.substr(end + 1);
                 continue;
             }
             auto end = sv.find_first_of(" \t");
-            v.emplace_back(sv.substr(0,end));
+            v.emplace_back(sv.substr(0, end));
 
             if (end == npos) break;
             sv = sv.substr(end);
         }
         return v;
     }
+
     auto isValidSession(std::string_view sv) -> bool {
         if (sv.length() > 32 || sv.length() < 8) return false;
         auto it = sv.find_first_not_of("0123456789abcdef");
@@ -74,19 +78,19 @@ namespace {
     auto toHexString(std::string_view bytes) -> std::string {
         std::string out{};
 
-        for (auto b : bytes) {
-            if (!out.empty()) out+= ' ';
-            out += std::format("{:02x}",static_cast<unsigned char>(b));
+        for (auto b: bytes) {
+            if (!out.empty()) out += ' ';
+            out += std::format("{:02x}", static_cast<unsigned char>(b));
         }
         return out;
     }
 
-    auto segmentsToJson(const std::vector<RedisProxy::Segment>& segments) -> json::array{
+    auto segmentsToJson(const std::vector<RedisProxy::Segment> &segments) -> json::array {
         json::array arr{};
-        for (const auto&[label, bytes] : segments) {
+        for (const auto &[label, bytes]: segments) {
             json::object obj{
-                    {"label", label},
-                    {"hex", toHexString(bytes)}
+                {"label", label},
+                {"hex", toHexString(bytes)}
             };
             arr.emplace_back(std::move(obj));
         }
@@ -95,7 +99,7 @@ namespace {
 
     auto encodeU32Le(std::uint32_t v) -> std::string {
         std::string out(4, '\0');
-        std::memcpy(out.data(),&v,4);
+        std::memcpy(out.data(), &v, 4);
 
         /* alternative way to store as little-endian
         std::string out{};
@@ -123,16 +127,17 @@ namespace {
                 return {};
         }
     }
-    auto decodeReply(std::string_view buf,std::size_t& pos, std::vector<RedisProxy::Segment>& segments,int depth = 0) -> std::optional<Reply> {
 
+    auto decodeReply(std::string_view buf, std::size_t &pos, std::vector<RedisProxy::Segment> &segments,
+                     int depth = 0) -> std::optional<Reply> {
         if (depth > 8) return std::nullopt;
 
         auto take = [&](size_t n) -> std::optional<std::string_view> {
             if (n > buf.size() - pos) return std::nullopt;
 
-            auto ptr = reinterpret_cast<const char*>(buf.data() +pos);
+            auto ptr = reinterpret_cast<const char *>(buf.data() + pos);
             pos += n;
-            return std::string_view(ptr,n);
+            return std::string_view(ptr, n);
         };
 
         Tag tag;
@@ -143,86 +148,76 @@ namespace {
         segments.emplace_back(RedisProxy::Segment{
             std::format("tag {}", getTagName(tag)), std::string(tagChunk.value())
         });
-        pos++;
+
         switch (tag) {
             case Tag::Nil:
-                segments.emplace_back(RedisProxy::Segment{
-                    "tag nil",std::string(*tagChunk)
-                });
                 return Reply{.var = std::monostate{}};
             case Tag::Error: {
-                segments.emplace_back(RedisProxy::Segment{
-                    "tag err",std::string(*tagChunk)
-                });
-
                 auto codeChunk = take(4);
                 if (!codeChunk.has_value()) return std::nullopt;
 
                 std::uint32_t code{};
                 std::memcpy(&code, codeChunk.value().data(), 4);
                 segments.emplace_back(RedisProxy::Segment
-                    {std::format("code {}", code), std::string(*codeChunk)
+                    {
+                        std::format("code {}", code), std::string(*codeChunk)
                     });
 
                 auto lenChunk = take(4);
                 if (!lenChunk) return std::nullopt;
 
                 std::uint32_t len{};
-                std::memcpy(&len,lenChunk.value().data(),4);
+                std::memcpy(&len, lenChunk.value().data(), 4);
                 segments.emplace_back(RedisProxy::Segment
-                  {std::format(",len {}", len), std::string(*lenChunk)
-                  });
+                    {
+                        std::format(",len {}", len), std::string(*lenChunk)
+                    });
 
                 auto msgChunk = take(len);
                 if (!msgChunk) return std::nullopt;
                 segments.emplace_back(RedisProxy::Segment
-                  {"msg", std::string(*msgChunk)
-                  });
+                    {
+                        "msg", std::string(*msgChunk)
+                    });
 
-                return Reply{.var = Err{.code = code, .msg = std::string(*msgChunk)}
+                return Reply{
+                    .var = Err{.code = code, .msg = std::string(*msgChunk)}
                 };
             }
             case Tag::String: {
-                segments.emplace_back(RedisProxy::Segment{
-                   "tag str",std::string(*tagChunk)
-               });
                 auto lenChunk = take(4);
                 if (!lenChunk.has_value()) return std::nullopt;
 
                 std::uint32_t len{};
                 std::memcpy(&len, lenChunk.value().data(), 4);
                 segments.emplace_back(RedisProxy::Segment{
-                    std::format("len {}", len), std::string(*lenChunk)});
+                    std::format("len {}", len), std::string(*lenChunk)
+                });
 
                 auto stringChunk = take(7);
                 if (!stringChunk.has_value()) return std::nullopt;
 
                 std::uint64_t string{};
-                std::memcpy(&string,stringChunk.value().data(),7);
+                std::memcpy(&string, stringChunk.value().data(), 7);
                 segments.emplace_back(RedisProxy::Segment{
-                    std::format("{}", string), std::string(*stringChunk)});
+                    std::format("{}", string), std::string(*stringChunk)
+                });
 
                 return Reply{.var = std::string{*stringChunk}};
             }
             case Tag::Int64: {
-                segments.emplace_back(RedisProxy::Segment{
-                   "tag i64",std::string(*tagChunk)
-               });
                 auto chunk = take(8);
                 if (!chunk.has_value()) return std::nullopt;
 
                 std::int64_t int64{};
                 std::memcpy(&int64, chunk.value().data(), 8);
                 segments.emplace_back(RedisProxy::Segment{
-                    std::format("{}", int64), std::string(*chunk)});
+                    std::format("{}", int64), std::string(*chunk)
+                });
 
                 return Reply{.var = int64};
             }
             case Tag::Double: {
-                segments.emplace_back(RedisProxy::Segment{
-                   "tag f64",std::string(*tagChunk)
-               });
-
                 auto chunk = take(8);
                 if (!chunk.has_value()) return std::nullopt;
 
@@ -231,27 +226,26 @@ namespace {
                 std::ostringstream oss;
                 oss << d;
                 segments.emplace_back(RedisProxy::Segment{
-                    oss.str(), std::string(*chunk)});
+                    oss.str(), std::string(*chunk)
+                });
 
                 return Reply{.var = d};
             }
             case Tag::Array: {
-                segments.emplace_back(RedisProxy::Segment{
-                   "tag arr",std::string(*tagChunk)
-               });
-
                 auto countChunk = take(4);
                 if (!countChunk.has_value()) return std::nullopt;
 
                 std::uint32_t count{};
                 std::memcpy(&count, countChunk.value().data(), 4);
-                segments.emplace_back(RedisProxy::Segment{std::format("count {}", count), std::string(countChunk.value())});
+                segments.emplace_back(RedisProxy::Segment{
+                    std::format("count {}", count), std::string(countChunk.value())
+                });
 
                 if (count > 10000) return std::nullopt;
 
                 std::vector<Reply> replies{};
-                for (std::uint32_t i = 0; i< count; ++i) {
-                    auto item = decodeReply(buf,pos,segments,depth+1);
+                for (std::uint32_t i = 0; i < count; ++i) {
+                    auto item = decodeReply(buf, pos, segments, depth + 1);
                     if (!item) return std::nullopt;
                     replies.emplace_back(std::move(*item));
                 }
@@ -262,23 +256,23 @@ namespace {
         }
     };
 
-    auto redisCliFormatter(const Reply& r, const std::string& indent ="") -> std::string {
+    auto redisCliFormatter(const Reply &r, const std::string &indent = "") -> std::string {
         switch (r.tag()) {
             default:
-                throw std::runtime_error("unkown tag");
+                throw std::runtime_error("unknown tag");
             case Tag::Nil:
                 return "(nil)";
             case Tag::Error: {
-                const auto&[code, msg] = std::get<Err>(r.var);
-                return std::format("(error) {}",msg);
+                const auto &[code, msg] = std::get<Err>(r.var);
+                return std::format("(error) {}", msg);
             }
             case Tag::String: {
                 auto str = std::get<std::string>(r.var);
-                return std::format("\"{}\"",str);
+                return std::format("\"{}\"", str);
             }
             case Tag::Int64: {
                 const auto i64 = std::get<std::int64_t>(r.var);
-                return std::format("(integer) {}",i64);
+                return std::format("(integer) {}", i64);
             }
             case Tag::Double: {
                 std::ostringstream oss;
@@ -286,16 +280,16 @@ namespace {
                 return oss.str();
             }
             case Tag::Array:
-                auto replies = std::get<std::vector<Reply>>(r.var);
+                auto replies = std::get<std::vector<Reply> >(r.var);
                 if (replies.empty()) return "(empty array)";
 
                 std::string out;
-                for (std::size_t i = 0 ; i < replies.size(); ++i) {
-                    if (i>0) out += "\n" + indent;
+                for (std::size_t i = 0; i < replies.size(); ++i) {
+                    if (i > 0) out += "\n" + indent;
 
-                    std::string prefix = std::format("{}) ", i+1);
+                    std::string prefix = std::format("{}) ", i + 1);
                     std::string child = indent + std::string(prefix.size(), ' ');
-                    out += prefix + redisCliFormatter(replies[i],child);
+                    out += prefix + redisCliFormatter(replies[i], child);
                 }
                 return out;
         }
@@ -429,11 +423,11 @@ auto RedisProxy::handle(const Request &req, const RequestContext &ctx) -> asio::
     std::vector<std::string> args{};
     std::string prefix{};
 
-    std::string* command{};
-    std::string* key{};
+    std::string *command{};
+    std::string *key{};
     {
         session = value.as_object()["session"];
-        if (!session.is_string || !isValidSession(session.as_string()))
+        if (!session.is_string() || !isValidSession(session.as_string()))
             co_return jsonError(http::status::bad_request, "bad session id");
 
         if (!_limiter.allow(ctx.remoteIp))
@@ -459,7 +453,7 @@ auto RedisProxy::handle(const Request &req, const RequestContext &ctx) -> asio::
             co_return jsonError(http::status::bad_request,
                                 std::format("'{}' takes {} argument(s)", *command, it->second.argc - 1));
 
-        for (const auto arg: args) {
+        for (const auto &arg: args) {
             if (arg.size() > 64)
                 co_return jsonError(http::status::bad_request, "arguments are limited to 64 bytes");
         }
@@ -470,7 +464,7 @@ auto RedisProxy::handle(const Request &req, const RequestContext &ctx) -> asio::
             if (std::stoi(args.back()) > 600000) args.back() = "600000";
         }
 
-        prefix = std::format("v:{}:", session.get_string());
+        prefix = "v:" + std::string(session.get_string()) + ":";
         if (it->second.hasKey) {
             key = &args[1];
             *key = prefix + *key;
@@ -531,7 +525,7 @@ auto RedisProxy::handle(const Request &req, const RequestContext &ctx) -> asio::
             }
 
             segments.clear();
-            segments.push_back({std::format("({} bytes, other visitors' keys hidden)", reply->size())});
+            segments.push_back({std::format("({} bytes, other visitors' keys hidden)", reply->size()), ""});
         }
     }
 
@@ -560,7 +554,7 @@ auto RedisProxy::handle(const Request &req, const RequestContext &ctx) -> asio::
     json::object result;
     {
         result["ok"] = true;
-        result["text"] = *reply;
+        result["text"] = redisCliFormatter(*recv);
         result["us"] = timeUs;
         result["sent"] = segmentsToJson(sent);
         result["recv"] = segmentsToJson(segments);
