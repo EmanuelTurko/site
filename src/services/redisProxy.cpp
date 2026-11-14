@@ -302,62 +302,269 @@ namespace {
     }
 }
 
-auto RedisProxy::roundTrip(beast::tcp_stream &stream, const std::vector<std::string> &args, std::vector<Segment> *sent) -> asio::awaitable<std::optional<std::string>> {
-
+auto RedisProxy::roundTrip(beast::tcp_stream &stream, const std::vector<std::string> &args,
+                           std::vector<Segment> *sent) -> asio::awaitable<std::optional<std::string> > {
     stream.expires_after(std::chrono::seconds(1)); // 1 second deadline for read and write
 
     std::vector<std::uint8_t> payload{};
-    for (const auto& arg : args) {
-        auto lenBytes = encodeU32Le(arg.size());
+
+    // Append encoded bytes to payload and record them in sent.
+    auto addBytes = [&](const std::string &bytes, const std::string &label) {
         payload.insert(
             payload.end(),
-            lenBytes.begin(),
-            lenBytes.end());
+            bytes.begin(),
+            bytes.end());
+
+        if (sent != nullptr)
+            sent->push_back({label, bytes});
+    };
+
+    // Append an argument's actual string bytes.
+    auto addString = [&](const std::string &str) {
         payload.insert(
             payload.end(),
-            reinterpret_cast<const uint8_t*>(arg.data()),
-            reinterpret_cast<const uint8_t*>(arg.data() + arg.size()));
+            reinterpret_cast<const std::uint8_t *>(str.data()),
+            reinterpret_cast<const std::uint8_t *>(str.data() + str.size()));
+
+        if (sent != nullptr)
+            sent->push_back({"\"" + str + "\"", str});
+    };
+
+    // Calculate body length:
+    // 4 bytes for argument count + 4 bytes per argument length + argument bytes.
+    std::uint32_t body = 4;
+
+    for (const auto &arg: args)
+        body += 4 + static_cast<std::uint32_t>(arg.size());
+
+    // Append total body length.
+    auto bodyBytes = encodeU32Le(body);
+    addBytes(bodyBytes, "len " + std::to_string(body));
+
+    // Append number of arguments.
+    auto countBytes = encodeU32Le(static_cast<std::uint32_t>(args.size()));
+    addBytes(countBytes, "nstr " + std::to_string(args.size()));
+
+    // Append each argument's length and contents.
+    for (const auto &arg: args) {
+        auto lenBytes = encodeU32Le(static_cast<std::uint32_t>(arg.size()));
+
+        addBytes(lenBytes, "len " + std::to_string(arg.size()));
+        addString(arg);
     }
 
+    // Send the complete request.
+    auto wRes = co_await asio::async_write(
+        stream,
+        asio::buffer(payload),
+        asio::as_tuple(asio::use_awaitable));
 
-    auto wRes = co_await asio::async_write(stream,asio::buffer(payload),asio::as_tuple(asio::use_awaitable));
     if (auto ec = std::get<0>(wRes)) {
         if (ec == asio::error::timed_out)
             logging::error("Write timed out");
+
         co_return std::nullopt;
     }
 
+    // Read the 4-byte reply length.
     std::uint8_t header[4];
-    auto hRes = co_await asio::async_read(stream,asio::buffer(header),asio::as_tuple(asio::use_awaitable)); // get the length N of the reply
+
+    auto hRes = co_await asio::async_read(
+        stream,
+        asio::buffer(header),
+        asio::as_tuple(asio::use_awaitable));
+
     if (auto ec = std::get<0>(hRes)) {
         if (ec == asio::error::timed_out)
             logging::error("Header timed out");
+
         co_return std::nullopt;
     }
 
+    // Decode the little-endian reply length.
     auto headerLen =
-        static_cast<uint32_t>(header[0]) |
-            static_cast<uint32_t>(header[1]) << 8 |
-                static_cast<uint32_t>(header[2]) << 16 |
-                    static_cast<uint32_t>(header[3]) << 24;
+            static_cast<std::uint32_t>(header[0]) |
+            (static_cast<std::uint32_t>(header[1]) << 8) |
+            (static_cast<std::uint32_t>(header[2]) << 16) |
+            (static_cast<std::uint32_t>(header[3]) << 24);
 
-    constexpr std::uint32_t maxPayloadSize = 64*1024;
-    if (headerLen> maxPayloadSize) co_return std::nullopt;
+    constexpr std::uint32_t maxPayloadSize = 64 * 1024;
 
-    std::string s(headerLen,'\0');
-    auto rRes = co_await asio::async_read(stream,asio::buffer(s),asio::as_tuple(asio::use_awaitable));
+    if (headerLen > maxPayloadSize)
+        co_return std::nullopt;
+
+    // Read the reply body.
+    std::string s(headerLen, '\0');
+
+    auto rRes = co_await asio::async_read(
+        stream,
+        asio::buffer(s),
+        asio::as_tuple(asio::use_awaitable));
+
     if (auto ec = std::get<0>(rRes)) {
         if (ec == asio::error::timed_out)
             logging::error("Read timed out");
+
         co_return std::nullopt;
     }
 
-    size_t pos{};
-    std::vector<Segment> segments{};
-    auto reply = decodeReply(s,pos,segments);
-    if (!reply) co_return std::nullopt;
-
-    if (sent != nullptr) *sent = std::move(segments);
-
     co_return s;
+}
+
+auto RedisProxy::handle(const Request &req, const RequestContext &ctx) -> asio::awaitable<Response> {
+    if (_cfg.host.empty())
+        co_return jsonError(http::status::service_unavailable, "redis demo is offline");
+
+    json::value value{};
+    {
+        boost::system::error_code ec{};
+        value = json::parse(req.body(), ec);
+
+        if (ec || !value.is_object())
+            co_return jsonError(
+                http::status::bad_request, "expected {\"session\": \"...\", \"line\": \"...\"}");
+    }
+
+    json::value session{};
+    std::vector<std::string> args{};
+    std::string prefix{};
+
+    std::string* command{};
+    std::string* key{};
+    {
+        session = value.as_object()["session"];
+        if (!session.is_string || !isValidSession(session.as_string()))
+            co_return jsonError(http::status::bad_request, "bad session id");
+
+        if (!_limiter.allow(ctx.remoteIp))
+            co_return jsonError(http::status::too_many_requests, "slow down a little");
+
+        auto line = value.as_object()["line"];
+        args = splitIntoArgs(line.as_string());
+        if (args.empty())
+            co_return jsonError(http::status::bad_request, "empty command");
+
+        command = &args[0];
+        std::ranges::transform(*command, command->begin(),
+                               [](unsigned char c) {
+                                   return static_cast<char>(std::tolower(c));
+                               });
+
+        auto it = kCommands.find(*command);
+        if (it == kCommands.cend())
+            co_return jsonError(http::status::bad_request,
+                                "unknown command; try: set get del keys pexpire pttl zadd zrem zscore zquery");
+
+        if (it->second.argc != args.size())
+            co_return jsonError(http::status::bad_request,
+                                std::format("'{}' takes {} argument(s)", *command, it->second.argc - 1));
+
+        for (const auto arg: args) {
+            if (arg.size() > 64)
+                co_return jsonError(http::status::bad_request, "arguments are limited to 64 bytes");
+        }
+
+        if (*command == "pexpire") {
+            if (std::stoi(args.back()) < 0)
+                co_return jsonError(http::status::bad_request, "removing a TTL is disabled on the public demo");
+            if (std::stoi(args.back()) > 600000) args.back() = "600000";
+        }
+
+        prefix = std::format("v:{}:", session.get_string());
+        if (it->second.hasKey) {
+            key = &args[1];
+            *key = prefix + *key;
+        }
+    }
+
+    beast::tcp_stream stream(co_await asio::this_coro::executor);
+    {
+        tcp::endpoint endpoint{};
+        try {
+            endpoint.address(asio::ip::make_address(_cfg.host));
+            endpoint.port(_cfg.port);
+        } catch (const std::exception &) {
+            co_return jsonError(http::status::internal_server_error, "bad redis host in config");
+        }
+
+        stream.expires_after(std::chrono::seconds(1));
+
+        auto r = co_await stream.async_connect(endpoint, asio::as_tuple(asio::use_awaitable));
+        if (auto ec = std::get<0>(r)) {
+            if (ec == asio::error::connection_refused)
+                co_return jsonError(http::status::service_unavailable, "connection refused");
+            if (ec == asio::error::timed_out)
+                co_return jsonError(http::status::service_unavailable, "timed out");
+            co_return jsonError(http::status::service_unavailable, "redis server unreachable");
+        }
+    }
+
+    long timeUs{};
+    std::optional<std::string> reply{};
+    std::vector<Segment> sent;
+    {
+        auto start = std::chrono::steady_clock::now();
+        reply = co_await roundTrip(stream, args, &sent);
+        if (!reply)
+            co_return jsonError(http::status::bad_gateway, "no reply from redis server");
+
+        auto now = std::chrono::steady_clock::now();
+        timeUs = std::chrono::duration_cast<std::chrono::microseconds>(now - start).count();
+    }
+
+    std::vector<Segment> segments{};
+    std::optional<Reply> recv{};
+    {
+        size_t pos{};
+        recv = decodeReply(*reply, pos, segments);
+        if (!recv)
+            co_return jsonError(http::status::bad_gateway, "could not decode reply");
+
+        if (auto replies = std::get_if<std::vector<Reply> >(&recv->var); *command == "keys" && replies) {
+            for (auto it = replies->begin(); it != replies->end();) {
+                if (auto str = std::get_if<std::string>(&it->var)) {
+                    if (str->starts_with(prefix)) {
+                        *str = str->substr(prefix.size());
+                        ++it;
+                    } else it = replies->erase(it);
+                } else it = replies->erase(it);
+            }
+
+            segments.clear();
+            segments.push_back({std::format("({} bytes, other visitors' keys hidden)", reply->size())});
+        }
+    }
+
+    {
+        if (*command == "set" || *command == "zadd") {
+            std::vector<std::string> ttlArgs = {"pttl", *key};
+            auto ttlReply = co_await roundTrip(stream, ttlArgs, nullptr);
+            if (!ttlReply) co_return jsonError(http::status::bad_gateway, "no reply from redis server");
+
+            size_t ttlPos{};
+            std::vector<Segment> ttlSegments;
+            auto ttlDecoded = decodeReply(*ttlReply, ttlPos, ttlSegments);
+            if (!ttlDecoded) co_return jsonError(http::status::bad_gateway, "could not decode ttl-reply");
+
+            if (ttlDecoded->tag() == Tag::Int64) {
+                if (auto i64 = std::get<std::int64_t>(ttlDecoded->var); i64 == -1) {
+                    ttlArgs = {"pexpire", *key, "600000"};
+                    auto expireReply = co_await roundTrip(stream, ttlArgs, nullptr);
+                    if (!expireReply)
+                        co_return jsonError(http::status::bad_gateway, "no reply from redis server");
+                }
+            }
+        }
+    }
+
+    json::object result;
+    {
+        result["ok"] = true;
+        result["text"] = *reply;
+        result["us"] = timeUs;
+        result["sent"] = segmentsToJson(sent);
+        result["recv"] = segmentsToJson(segments);
+        result["prefix"] = prefix;
+    }
+    co_return jsonResponse(http::status::ok, result);
 }
