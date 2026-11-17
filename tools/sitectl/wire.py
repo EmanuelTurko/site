@@ -76,4 +76,37 @@ def decode_reply(buf: bytes, pos:int = 0, depth: int = 0) -> tuple[object,int]:
 
 
 
-#def format_like_redis_cli(value: object, indent: str = "") -> str: ...
+def format_like_redis_cli(value: object, indent: str = "") -> str:
+    
+    match value:
+        case None:
+            return "(nil)"
+        case RedisError():
+            return f"(error) {value.message}"
+        case str():
+            return "\" " + str + "\""
+        case int():
+            return f"(integer) {value}"
+        case float():
+            return f"(double) {value:g}"
+        case list():
+            if not value:
+                return "(empty array)"
+            
+            out: str = ""
+            for i, v in enumerate(value):
+                if i > 0:
+                    out += "\n" + indent
+                    
+                prefix = f"{i+1})"
+                child = f"{indent} {' ' * len(prefix)}"
+                out += prefix + " " + format_like_redis_cli(v,child)
+            return out
+            
+        
+
+                    
+            
+                
+            
+        
