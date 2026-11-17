@@ -84,7 +84,7 @@ def format_like_redis_cli(value: object, indent: str = "") -> str:
         case RedisError():
             return f"(error) {value.message}"
         case str():
-            return "\" " + str + "\""
+            return "\"" + value + "\""
         case int():
             return f"(integer) {value}"
         case float():
