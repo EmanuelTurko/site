@@ -1,0 +1,41 @@
+{
+  "about": "Golden examples for the redis wire protocol. Bytes are hex with spaces. The C++ tests (tests/) and the Python tests (tools/tests/) both read this file, so the two implementations can never drift apart silently.",
+
+  "requests": [
+    {"name": "get k",            "args": ["get", "k"],               "hex": "10 00 00 00 02 00 00 00 03 00 00 00 67 65 74 01 00 00 00 6b"},
+    {"name": "keys (one word)",  "args": ["keys"],                   "hex": "0c 00 00 00 01 00 00 00 04 00 00 00 6b 65 79 73"},
+    {"name": "empty argument",   "args": ["set", "k", ""],           "hex": "14 00 00 00 03 00 00 00 03 00 00 00 73 65 74 01 00 00 00 6b 00 00 00 00"},
+    {"name": "space inside",     "args": ["set", "k", "a b"],        "hex": "17 00 00 00 03 00 00 00 03 00 00 00 73 65 74 01 00 00 00 6b 03 00 00 00 61 20 62"},
+    {"name": "no arguments",     "args": [],                         "hex": "04 00 00 00 00 00 00 00"}
+  ],
+
+  "replies": [
+    {"name": "nil",              "hex": "00",                                                      "end": 1,  "text": "(nil)"},
+    {"name": "string",           "hex": "02 07 00 00 00 65 6d 61 6e 75 65 6c",                     "end": 12, "text": "\"emanuel\""},
+    {"name": "empty string",     "hex": "02 00 00 00 00",                                          "end": 5,  "text": "\"\""},
+    {"name": "int 5",            "hex": "03 05 00 00 00 00 00 00 00",                              "end": 9,  "text": "(integer) 5"},
+    {"name": "int -1",           "hex": "03 ff ff ff ff ff ff ff ff",                              "end": 9,  "text": "(integer) -1"},
+    {"name": "int 599990",       "hex": "03 b6 27 09 00 00 00 00 00",                              "end": 9,  "text": "(integer) 599990"},
+    {"name": "double 1.5",       "hex": "04 00 00 00 00 00 00 f8 3f",                              "end": 9,  "text": "(double) 1.5"},
+    {"name": "double 2",         "hex": "04 00 00 00 00 00 00 00 40",                              "end": 9,  "text": "(double) 2"},
+    {"name": "error",            "hex": "01 01 00 00 00 03 00 00 00 62 61 64",                     "end": 12, "text": "(error) bad"},
+    {"name": "empty array",      "hex": "05 00 00 00 00",                                          "end": 5,  "text": "(empty array)"},
+    {"name": "array a, bc",      "hex": "05 02 00 00 00 02 01 00 00 00 61 02 02 00 00 00 62 63",   "end": 18, "text": "1) \"a\"\n2) \"bc\""},
+    {"name": "mixed array",      "hex": "05 03 00 00 00 02 01 00 00 00 78 03 07 00 00 00 00 00 00 00 00", "end": 21, "text": "1) \"x\"\n2) (integer) 7\n3) (nil)"},
+    {"name": "nested array",     "hex": "05 02 00 00 00 05 02 00 00 00 02 01 00 00 00 78 02 01 00 00 00 79 02 01 00 00 00 7a", "end": 28, "text": "1) 1) \"x\"\n   2) \"y\"\n2) \"z\""},
+    {"name": "trailing bytes are left alone", "hex": "00 ff ff",                                   "end": 1,  "text": "(nil)"}
+  ],
+
+  "bad_replies": [
+    {"name": "empty buffer",              "hex": ""},
+    {"name": "unknown tag",               "hex": "09"},
+    {"name": "string cut short",          "hex": "02 07 00 00 00 65 6d 61 6e 75 65"},
+    {"name": "string length cut short",   "hex": "02 07 00"},
+    {"name": "int cut short",             "hex": "03 05 00 00 00"},
+    {"name": "array item missing",        "hex": "05 02 00 00 00 02 01 00 00 00 61"},
+    {"name": "array claims 4 billion",    "hex": "05 ff ff ff ff"},
+    {"name": "array claims 10001",        "hex": "05 11 27 00 00"},
+    {"name": "string claims 4 billion",   "hex": "02 ff ff ff ff 61"},
+    {"name": "nested 10 deep",            "hex": "05 01 00 00 00 05 01 00 00 00 05 01 00 00 00 05 01 00 00 00 05 01 00 00 00 05 01 00 00 00 05 01 00 00 00 05 01 00 00 00 05 01 00 00 00 05 01 00 00 00 00"}
+  ]
+}
