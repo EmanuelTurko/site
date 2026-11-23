@@ -39,7 +39,10 @@ FetchContent_MakeAvailable(googletest) # download + make GTest:: targets exist
 
 enable_testing() # turn on ctest for project
 
-add_executable(site_tests tests/mustacheTest.cpp)
+add_executable(site_tests
+        tests/mustache_test.cpp
+        tests/process_test.cpp
+)
 target_link_libraries(site_tests PRIVATE sitecore GTest::gtest_main)
 
 include(GoogleTest)
