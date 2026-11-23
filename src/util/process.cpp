@@ -7,7 +7,9 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <poll.h>
+#include <spawn.h>
 
+extern char** environ;
 auto makeCharArgv(const std::vector<std::string>& argv) -> std::vector<char*> {
     std::vector<char*> v{};
     v.reserve(argv.size() +1);
@@ -140,5 +142,15 @@ auto process::run(const std::vector<std::string> &argv, const std::filesystem::p
 }
 
 auto process::spawn(const std::vector<std::string> &argv, const std::filesystem::path &cwd) -> pid_t {
-    auto chars = makeCharArgv(argv);
+    auto cargv = makeCharArgv(argv);
+    auto scwd = cwd.string();
+    pid_t pid;
+
+    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_init(&actions);
+    posix_spawn_file_actions_addchdir_np(&actions,scwd.c_str());
+    if (auto status = posix_spawn(&pid,cargv[0],&actions,nullptr,cargv.data(),environ); status != 0)
+        pid = -1;
+    posix_spawn_file_actions_destroy(&actions);
+    return pid;
 }
