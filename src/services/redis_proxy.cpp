@@ -1,4 +1,4 @@
-#include "redisProxy.hpp"
+#include "redis_proxy.hpp"
 #include <cstring>
 
 #include "util/logging.hpp"

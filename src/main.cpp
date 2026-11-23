@@ -3,10 +3,10 @@
 #include "stats.hpp"
 #include "http/router.hpp"
 #include "http/server.hpp"
-#include "http/staticFiles.hpp"
+#include "http/static_files.hpp"
 #include "config.hpp"
 #include "page.hpp"
-#include "services/redisProxy.hpp"
+#include "services/redis_proxy.hpp"
 
 
 int main(int argc,char* argv[]) {

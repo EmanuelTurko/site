@@ -1,4 +1,4 @@
-#include "staticFiles.hpp"
+#include "static_files.hpp"
 #include <fstream>
 
 namespace {

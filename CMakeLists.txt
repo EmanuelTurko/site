@@ -9,14 +9,14 @@ find_package(Threads REQUIRED)
 
 # add all code except main.cpp
 add_library(sitecore
-        src/boostJson.cpp
+        src/boost_json.cpp
         src/http/router.cpp
         src/http/server.cpp
-        src/http/staticFiles.cpp
+        src/http/static_files.cpp
         src/config.cpp
         src/site/mustache.cpp
         src/page.cpp
-        src/services/redisProxy.cpp
+        src/services/redis_proxy.cpp
         src/util/process.cpp
 )
 target_include_directories(sitecore PUBLIC src)

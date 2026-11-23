@@ -3,7 +3,7 @@
 #include <string>
 
 #include "../http/common.hpp"
-#include "util/rateLimit.hpp"
+#include "util/rate_limit.hpp"
 
 class RedisProxy {
 public:
