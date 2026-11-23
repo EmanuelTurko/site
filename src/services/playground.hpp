@@ -4,6 +4,7 @@
 #include <random>
 
 #include "http/common.hpp"
+#include "util/logging.hpp"
 #include "util/rate_limit.hpp"
 
 class TempDir {
@@ -43,8 +44,7 @@ class Playground {
     };
 
     explicit Playground(Config cfg);
-
-    ~Playground();     // joins the pool
+    ~Playground();    // joins the pool
 
     auto enabled() const -> bool; // true if _cfg.compiler isn't empty
     auto compiler() const -> std::string&;
