@@ -2,8 +2,7 @@
 
 #include <fcntl.h>
 #include <unistd.h>
-#include <bits/fcntl-linux.h>
-#include <signal.h>
+#include <csignal>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <poll.h>
