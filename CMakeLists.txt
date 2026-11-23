@@ -18,6 +18,8 @@ add_library(sitecore
         src/page.cpp
         src/services/redis_proxy.cpp
         src/util/process.cpp
+        src/util/unit.hpp
+        src/services/playground.cpp
 )
 target_include_directories(sitecore PUBLIC src)
 target_link_libraries(sitecore PUBLIC Boost::headers Threads::Threads)
