@@ -45,6 +45,7 @@ enable_testing() # turn on ctest for project
 add_executable(site_tests
         tests/mustache_test.cpp
         tests/process_test.cpp
+        tests/playground_test.cpp
 )
 target_link_libraries(site_tests PRIVATE sitecore GTest::gtest_main)
 
