@@ -23,7 +23,7 @@ add_library(sitecore
 )
 target_include_directories(sitecore PUBLIC src)
 target_link_libraries(sitecore PUBLIC Boost::headers Threads::Threads)
-target_compile_options(sitecore PUBLIC -Wall -Wextra)
+target_compile_options(sitecore PUBLIC -Wall -Wextra -Wpedantic -Wshadow)
 target_compile_definitions(sitecore PUBLIC
         SITE_DEFAULT_ROOT="${CMAKE_SOURCE_DIR}"
         BOOST_ASIO_NO_DEPRECATED)
