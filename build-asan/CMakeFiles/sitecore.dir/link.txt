@@ -1,0 +1,2 @@
+/usr/bin/ar qc libsitecore.a CMakeFiles/sitecore.dir/src/boost_json.cpp.o CMakeFiles/sitecore.dir/src/http/router.cpp.o CMakeFiles/sitecore.dir/src/http/server.cpp.o CMakeFiles/sitecore.dir/src/http/static_files.cpp.o CMakeFiles/sitecore.dir/src/config.cpp.o CMakeFiles/sitecore.dir/src/site/mustache.cpp.o CMakeFiles/sitecore.dir/src/page.cpp.o CMakeFiles/sitecore.dir/src/services/redis_proxy.cpp.o CMakeFiles/sitecore.dir/src/util/process.cpp.o CMakeFiles/sitecore.dir/src/services/playground.cpp.o
+/usr/bin/ranlib libsitecore.a

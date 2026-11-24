@@ -28,6 +28,12 @@ target_compile_definitions(sitecore PUBLIC
         SITE_DEFAULT_ROOT="${CMAKE_SOURCE_DIR}"
         BOOST_ASIO_NO_DEPRECATED)
 
+set(SITE_SANITIZE "" CACHE STRING "address,undefined or thread")
+if(SITE_SANITIZE)
+    target_compile_options(sitecore PUBLIC -fsanitize=${SITE_SANITIZE} -fno-omit-frame-pointer -g)
+    target_link_options(sitecore PUBLIC -fsanitize=${SITE_SANITIZE})
+endif()
+
 # server is main.cpp + library
 add_executable(site src/main.cpp)
 target_link_libraries(site PRIVATE sitecore)

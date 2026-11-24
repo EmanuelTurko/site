@@ -1,0 +1,1 @@
+/usr/bin/c++ -fsanitize=thread CMakeFiles/site_tests.dir/tests/mustache_test.cpp.o CMakeFiles/site_tests.dir/tests/process_test.cpp.o CMakeFiles/site_tests.dir/tests/playground_test.cpp.o -o site_tests  libsitecore.a lib/libgtest_main.a lib/libgtest.a 
