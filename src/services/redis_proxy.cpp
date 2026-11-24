@@ -37,7 +37,7 @@ namespace {
     };
 
     struct Reply {
-        std::variant<std::monostate, std::string, Err, std::int64_t, double, std::vector<Reply> > var;
+        std::variant<std::monostate,Err,std::string, std::int64_t, double, std::vector<Reply> > var;
 
         [[nodiscard]] Tag tag() const {
             return static_cast<Tag>(var.index());
@@ -194,13 +194,11 @@ namespace {
                     std::format("len {}", len), std::string(*lenChunk)
                 });
 
-                auto stringChunk = take(7);
+                auto stringChunk = take(len);
                 if (!stringChunk.has_value()) return std::nullopt;
 
-                std::uint64_t string{};
-                std::memcpy(&string, stringChunk.value().data(), 7);
                 segments.emplace_back(RedisProxy::Segment{
-                    std::format("{}", string), std::string(*stringChunk)
+                    std::format("\"{}\"", *stringChunk), std::string(*stringChunk)
                 });
 
                 return Reply{.var = std::string{*stringChunk}};
