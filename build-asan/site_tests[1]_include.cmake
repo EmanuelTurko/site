@@ -1,5 +1,0 @@
-if(EXISTS "/home/et/cvSite/build-asan/site_tests[1]_tests.cmake")
-  include("/home/et/cvSite/build-asan/site_tests[1]_tests.cmake")
-else()
-  add_test(site_tests_NOT_BUILT site_tests_NOT_BUILT)
-endif()

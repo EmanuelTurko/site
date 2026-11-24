@@ -1,1 +1,0 @@
-/usr/bin/c++ -fsanitize=thread CMakeFiles/site.dir/src/main.cpp.o -o site  libsitecore.a 
