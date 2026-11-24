@@ -56,5 +56,5 @@ add_executable(site_tests
 target_link_libraries(site_tests PRIVATE sitecore GTest::gtest_main)
 
 include(GoogleTest)
-gtest_discover_tests(site_tests)
+gtest_discover_tests(site_tests DISCOVERY_MODE PRE_TEST )
 

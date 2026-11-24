@@ -15,5 +15,11 @@
     { "name": "asan",    "configurePreset": "asan" },
     { "name": "tsan",    "configurePreset": "tsan" },
     { "name": "release", "configurePreset": "release" }
+  ],
+  "testPresets": [
+    { "name": "debug",   "configurePreset": "debug",   "output": { "outputOnFailure": true } },
+    { "name": "asan",    "configurePreset": "asan",    "output": { "outputOnFailure": true } },
+    { "name": "tsan",    "configurePreset": "tsan",    "output": { "outputOnFailure": true } },
+    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } }
   ]
 }
