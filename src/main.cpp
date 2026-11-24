@@ -8,8 +8,24 @@
 #include "page.hpp"
 #include "services/playground.hpp"
 #include "services/redis_proxy.hpp"
+#include "util/process.hpp"
+#include <sys/wait.h>
 
+namespace {
+    auto redisReachable(const RedisProxy::Config& cfg) -> bool {
+        asio::io_context ioc{};
+        tcp::socket socket(ioc);
+        try {
+            tcp::endpoint endpoint{asio::ip::make_address(cfg.host),cfg.port};
+            socket.connect(endpoint);
+        } catch (std::exception&){
+            return false;
+        }
+        return true;
+    }
+    using std::chrono_literals::operator ""ms;
 
+}
 int main(int argc,char* argv[]) {
     std::filesystem::path path;
     if (argc>1)
@@ -28,19 +44,38 @@ int main(int argc,char* argv[]) {
         logging::error(e.what());
         return 1;
     }
-
     RedisProxy::Config redisCfg{
         .host = cfg.redis.host,
         .port = cfg.redis.port
     };
-    RedisProxy rd(redisCfg);
-
     Playground::Config pgCfg{
         .compiler = cfg.playground.compiler,
         .maxSource = cfg.playground.maxSource,
         .workers = cfg.playground.workers
     };
+
+    pid_t pid = -1;
+    if (!cfg.redis.autostart.empty() && !cfg.redis.host.empty() && !redisReachable(redisCfg)) {
+        pid = process::spawn(
+            {cfg.redis.autostart},
+            std::filesystem::path(cfg.redis.autostart).parent_path());
+        if (pid < 0)
+            logging::warn("spawn failed: " + cfg.redis.autostart);
+        else {
+            logging::info(std::format("started: {} pid({})",std::filesystem::canonical(cfg.redis.autostart).string(),std::to_string(pid)));
+            std::this_thread::sleep_for(300ms);
+        }
+    }
+    RedisProxy rd(redisCfg);
+    logging::info(std::format(
+        "redis demo: {} {}:{}",
+        cfg.redis.host.empty()? "off":"on",
+        cfg.redis.host,cfg.redis.port));
     Playground pg(pgCfg);
+    logging::info(std::format(
+        "playground: {} compiler: {}",
+        cfg.playground.compiler.empty()? "off":"on",
+        std::filesystem::canonical(cfg.playground.compiler).string()));
 
     Stats stats{};
     Router router{};
@@ -100,7 +135,7 @@ int main(int argc,char* argv[]) {
         [&ioc](const beast::error_code&,int) {
             ioc.stop();
         });
-    logging::info(std::format("listening on http://localhost:{} with {} io threads",cfg.port,cfg.threads));
+    logging::info(std::format("listening on http://localhost:{} with {} io threads..",cfg.port,cfg.threads));
 
     std::vector<std::thread> threads;
     for (unsigned i=0; i < cfg.threads-1;++i) {
@@ -112,6 +147,10 @@ int main(int argc,char* argv[]) {
     for (auto& t : threads) {
         t.join();
     }
+    if (pid) {
+        kill(pid,SIGTERM);
+        waitpid(pid,nullptr,0);
+        logging::info("redis: stopped");
+    }
     logging::info("bye");
-
 }
