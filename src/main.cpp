@@ -6,6 +6,7 @@
 #include "http/static_files.hpp"
 #include "config.hpp"
 #include "page.hpp"
+#include "services/playground.hpp"
 #include "services/redis_proxy.hpp"
 
 
@@ -28,8 +29,18 @@ int main(int argc,char* argv[]) {
         return 1;
     }
 
-    RedisProxy::Config redisCfg{.host = cfg.redis.host, .port = cfg.redis.port};
+    RedisProxy::Config redisCfg{
+        .host = cfg.redis.host,
+        .port = cfg.redis.port
+    };
     RedisProxy rd(redisCfg);
+
+    Playground::Config pgCfg{
+        .compiler = cfg.playground.compiler,
+        .maxSource = cfg.playground.maxSource,
+        .workers = cfg.playground.workers
+    };
+    Playground pg(pgCfg);
 
     Stats stats{};
     Router router{};
@@ -69,6 +80,11 @@ int main(int argc,char* argv[]) {
         [&rd](const Request& req,const RequestContext& ctx) -> asio::awaitable<Response> {
             co_return co_await rd.handle(req,ctx);
         });
+    router.post("/api/run",
+        [&pg](const Request& req,const RequestContext& ctx) -> asio::awaitable<Response> {
+            co_return co_await pg.handle(req,ctx);
+        });
+
     asio::io_context ioc(cfg.threads);
     Server server(ioc,endpoint,router,stats);
 

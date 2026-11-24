@@ -29,7 +29,7 @@ struct RequestContext {
 // pool, ...) and eventually produces a Response.
 using Handler = std::function<asio::awaitable<Response>(const Request&, const RequestContext& ctx)>;
 
-inline auto makeResponse(http::status status, std::string body, std::string_view contentType)->Response {
+inline auto makeResponse(http::status status, std::string body, std::string_view contentType = "application/json")->Response {
     Response res{status,11};
     res.set(http::field::content_type, contentType);
     res.body() = std::move(body);

@@ -47,7 +47,7 @@ class Playground {
     ~Playground();    // joins the pool
 
     auto enabled() const -> bool; // true if _cfg.compiler isn't empty
-    auto compiler() const -> std::string&;
+    auto compiler() const ->  const std::string&;
     auto handle(const Request& req,const RequestContext& ctx) -> asio::awaitable<Response>;
 
     private:

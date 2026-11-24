@@ -24,6 +24,18 @@ namespace {
         }
         return o.empty()? output : o;
     }
+    struct busyGuard{
+        std::atomic<std::size_t>& guard;
+        ~busyGuard(){guard.fetch_sub(1);}
+    };
+}
+
+auto Playground::enabled() const -> bool {
+    return !_cfg.compiler.empty();
+}
+
+auto Playground::compiler() const -> const std::string & {
+    return _cfg.compiler;
 }
 Playground::Playground(Config cfg) : _cfg(std::move(cfg)),
                                      _pool(_cfg.workers) {
@@ -111,4 +123,70 @@ auto Playground::compileAndRun(const std::string &code) -> json::object {
         obj["exit_code"] = WEXITSTATUS(res.status);
     }
     return obj;
+}
+
+auto Playground::handle(const Request &req, const RequestContext &ctx) -> asio::awaitable<Response> {
+    {
+        json::object o{
+            {"ok", false},
+            {"error", "playground is offline"}
+        };
+        if (!enabled())
+            co_return makeResponse(http::status::service_unavailable, json::serialize(o));
+    }
+    boost::system::error_code ec{};
+    auto v = json::parse(req.body(), ec);
+    std::string code{};
+    {
+        json::object o{
+            {"ok", false},
+            {"error", "expected code.."}
+        };
+        if (!v.is_object())
+            co_return makeResponse(http::status::bad_request, json::serialize(o));
+        if (auto it = v.as_object().find("code"); it != v.as_object().cend()) {
+            if (!it->value().is_string())
+                co_return makeResponse(http::status::bad_request, json::serialize(o));
+            code = it->value().as_string();
+        }
+        else co_return makeResponse(http::status::bad_request, json::serialize(o));
+    }
+    {
+        json::object o{
+            {"ok", false},
+            {
+                "error", std::format(
+                    "source too large - {} (max {})", code.size(), _cfg.maxSource)
+            }
+        };
+        if (code.size() > _cfg.maxSource) {
+            co_return makeResponse(http::status::payload_too_large, json::serialize(o));
+        }
+    }
+    {
+        json::object o{
+            {"ok", false},
+            {"error", "slow down a little.."}
+        };
+        if (!_limiter.allow(ctx.remoteIp))
+            co_return makeResponse(http::status::too_many_requests, json::serialize(o));
+    }
+    {
+        json::object o{
+            {"ok", false},
+            {"error", "busy, try again in a second"}
+        };
+        if (_busy.fetch_add(1) >= _cfg.workers) {
+            _busy.fetch_sub(1);
+            co_return makeResponse(http::status::service_unavailable, json::serialize(o));
+        }
+    }
+    busyGuard g{_busy}; // <-- destructor called for _busy when function ends.
+
+    auto executor = co_await asio::this_coro::executor;
+    co_await asio::post(_pool.get_executor(), asio::use_awaitable);
+    auto obj = compileAndRun(code);
+    co_await asio::post(executor, asio::use_awaitable);
+
+    co_return makeResponse(http::status::ok, json::serialize(obj));
 }
