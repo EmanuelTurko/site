@@ -1,0 +1,19 @@
+{
+  "version": 6,
+  "configurePresets": [
+    { "name": "debug", "binaryDir": "build",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" } },
+    { "name": "asan", "inherits": "debug", "binaryDir": "build-asan",
+      "cacheVariables": { "SITE_SANITIZE": "address,undefined" } },
+    { "name": "tsan", "inherits": "debug", "binaryDir": "build-tsan",
+      "cacheVariables": { "SITE_SANITIZE": "thread" } },
+    { "name": "release", "binaryDir": "build-release",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" } }
+  ],
+  "buildPresets": [
+    { "name": "debug",   "configurePreset": "debug" },
+    { "name": "asan",    "configurePreset": "asan" },
+    { "name": "tsan",    "configurePreset": "tsan" },
+    { "name": "release", "configurePreset": "release" }
+  ]
+}
