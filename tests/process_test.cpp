@@ -1,3 +1,5 @@
+// Step 13 "done when" table + step 17.4 extras, as GoogleTest cases.
+// Field names follow your camelCase Limits/Result; rename if yours differ.
 #include <gtest/gtest.h>
 
 #include "util/process.hpp"
@@ -18,9 +20,6 @@
 #include <unistd.h>
 
 namespace {
-
-// "generous limits" from the guide: CPU 5 s, memory 512 MB, files 4 MB,
-// fork allowed, no network isolation.
 process::Limits generous(int timeoutMs = 5000) {
     return process::Limits{
         .cpuSeconds = 5,
@@ -57,7 +56,7 @@ void expectNoChildrenLeft() {
     EXPECT_EQ(errno, ECHILD);
 }
 
-}  // namespace
+}
 
 TEST(ProcessRun, EchoPrintsAndExitsZero) {
     auto r = process::run({"/bin/echo", "hi"}, "/tmp", generous());
@@ -121,6 +120,34 @@ TEST(ProcessRun, TimeoutKillsTheWholeGroup) {
     expectNoChildrenLeft();
 }
 
+TEST(ProcessRun, StderrIsCapturedToo) {
+    auto r = process::run({"/bin/sh", "-c", "echo oops >&2"}, "/tmp", generous());
+    EXPECT_EQ(r.output, "oops\n") << "stderr must go into the same pipe as stdout";
+    EXPECT_EQ(exitCode(r), 0);
+    expectNoChildrenLeft();
+}
+
+TEST(ProcessRun, EnvironmentIsNotInherited) {
+    ASSERT_EQ(setenv("SITE_TEST_SECRET", "leaked", 1), 0);
+    auto r = process::run({"/usr/bin/env"}, "/tmp", generous());
+    unsetenv("SITE_TEST_SECRET");
+    EXPECT_EQ(exitCode(r), 0) << r.output;
+    EXPECT_EQ(r.output.find("SITE_TEST_SECRET"), std::string::npos)
+        << "the child saw the parent's environment:\n" << r.output;
+    expectNoChildrenLeft();
+}
+
+TEST(ProcessRun, StdinIsDevNull) {
+    // cat reads stdin until EOF; with /dev/null that's immediate, with an inherited
+    // terminal or pipe it would hang until the timeout
+    auto r = process::run({"/bin/cat"}, "/tmp", generous(2000));
+    EXPECT_FALSE(r.timedOut) << "cat waited for input: stdin isn't /dev/null";
+    EXPECT_EQ(r.output, "");
+    EXPECT_EQ(exitCode(r), 0);
+    EXPECT_LT(r.ms, 500);
+    expectNoChildrenLeft();
+}
+
 TEST(ProcessSpawn, StartsInCwdAndReturnsImmediately) {
     auto dir = std::filesystem::temp_directory_path() / ("spawn_test_" + std::to_string(getpid()));
     std::filesystem::create_directories(dir);
@@ -146,7 +173,7 @@ TEST(ProcessSpawn, StartsInCwdAndReturnsImmediately) {
 TEST(ProcessSpawn, MissingProgramFails) {
     // posix_spawn reports a failed exec as an error, so spawn returns -1
     pid_t pid = process::spawn({"/bin/nope"}, "/tmp");
-    if (pid > 0) waitpid(pid, nullptr, 0);  // some libcs report it as exit 127 instead
+    if (pid > 0) waitpid(pid, nullptr, 0);
     EXPECT_EQ(pid, -1);
     expectNoChildrenLeft();
 }
